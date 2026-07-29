@@ -52,7 +52,7 @@ Issues = "https://github.com/rssrwn/molito/issues"
 
 [project.optional-dependencies]
 interactions = ["prolif>=2.0", "MDAnalysis"]
-dev = ["matplotlib", "jupyter", "ipykernel", "py3Dmol", "ruff==0.16.0", "build", "twine"]
+dev = ["matplotlib", "jupyter", "ipykernel", "py3Dmol", "ruff==0.16.0", "mypy==2.3.0", "build", "twine"]
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "ruff==0.16.0"]
 
 [tool.ruff]
@@ -79,3 +79,31 @@ include = ["molito*"]
 
 [tool.setuptools.package-data]
 molito = ["defs/*.fdef", "py.typed"]
+
+[tool.mypy]
+# No python_version pin: numpy's bundled stubs use `type` statements that mypy only parses
+# under 3.12+, so it follows whichever interpreter runs it. The test matrix covers 3.11.
+files = ["molito"]
+
+# rdkit, h5py, biotite, prolif and xtb ship no usable stubs.
+ignore_missing_imports = true
+
+# What this gate is for: catching declared types that lie. molito ships py.typed, so a
+# wrong annotation becomes a *downstream user's* type error, which they cannot fix.
+#
+# The codes below are switched off because the existing code trips them in ways that are
+# imprecise rather than wrong - reusing a local for a different type, __getitem__ narrowing
+# against Sequence, numpy dtype unions. That is a backlog, not a verdict; re-enable them one
+# at a time when someone wants to do the work.
+disable_error_code = [
+    "arg-type",
+    "assignment",
+    "attr-defined",
+    "call-overload",
+    "index",
+    "misc",
+    "operator",
+    "override",
+    "union-attr",
+    "var-annotated",
+]

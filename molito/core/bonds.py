@@ -94,7 +94,7 @@ class BondEncoding:
     All methods are classmethods operating on class-level lookup tables.
     """
 
-    _enum_bond_map = {
+    _enum_bond_map: dict[int, _BondT] = {
         0: "NONE",
         1: Chem.BondType.SINGLE,
         2: Chem.BondType.DOUBLE,
@@ -411,9 +411,8 @@ class BondSet(Sequence):
         bond_types = self.types.copy() if bond_types is None else bond_types.copy()
         bond_types = np.expand_dims(bond_types, axis=1)
 
-        bonds = np.concatenate((bond_indices, bond_types), axis=1)
-        bonds = BondSet(bonds)
-        return bonds
+        bond_arr = np.concatenate((bond_indices, bond_types), axis=1)
+        return BondSet(bond_arr)
 
     def copy(self) -> BondSet:
         return self.copy_with()

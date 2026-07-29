@@ -6,7 +6,7 @@ from rdkit.Chem import AllChem
 from molito.geometry.common import possibly_add_hs
 
 
-def calc_energy_mmff(mol: Chem.Mol, per_atom: bool = False) -> float | list[float]:
+def calc_energy_mmff(mol: Chem.Mol, per_atom: bool = False) -> float | list[float] | None:
     """Calculate the energy for an RDKit molecule using the MMFF forcefield.
 
     The molecule is copied so the original is not modified. If multiple conformers exist in the molecule the energies

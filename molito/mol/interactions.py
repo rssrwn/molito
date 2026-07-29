@@ -421,7 +421,7 @@ class InteractionSet:
         data = np.array(group["data"][()])
         sizes = np.array(group["sizes"][()])
 
-        interaction_sets = []
+        interaction_sets: list[InteractionSet | None] = []
         offset = 0
         for size in sizes:
             if size == 0:

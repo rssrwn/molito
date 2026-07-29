@@ -235,27 +235,29 @@ class AtomSet(Sequence):
     def res_names(self) -> TArr | None:
         """Returns array of residue names, shape [n_atoms,], or None if not set."""
 
-        if self._res_names is None:
+        values = self._res_names
+
+        if values is None:
             return None
 
-        if isinstance(self._res_names, LazyData):
-            arr = self._res_names.read()
-            return AtomSet._decode_bytes(arr)
+        if isinstance(values, LazyData):
+            return AtomSet._decode_bytes(values.read())
 
-        return self._res_names
+        return values
 
     @property
     def atom_names(self) -> TArr | None:
         """Returns array of atom names, shape [n_atoms,], or None if not set."""
 
-        if self._atom_names is None:
+        values = self._atom_names
+
+        if values is None:
             return None
 
-        if isinstance(self._atom_names, LazyData):
-            arr = self._atom_names.read()
-            return AtomSet._decode_bytes(arr)
+        if isinstance(values, LazyData):
+            return AtomSet._decode_bytes(values.read())
 
-        return self._atom_names
+        return values
 
     @property
     def res_ids(self) -> TArr | None:
@@ -273,14 +275,15 @@ class AtomSet(Sequence):
     def chain_ids(self) -> TArr | None:
         """Returns array of chain IDs, shape [n_atoms,], or None if not set."""
 
-        if self._chain_ids is None:
+        values = self._chain_ids
+
+        if values is None:
             return None
 
-        if isinstance(self._chain_ids, LazyData):
-            arr = self._chain_ids.read()
-            return AtomSet._decode_bytes(arr)
+        if isinstance(values, LazyData):
+            return AtomSet._decode_bytes(values.read())
 
-        return self._chain_ids
+        return values
 
     @property
     def has_residue_annotations(self) -> bool:
@@ -388,7 +391,10 @@ class AtomSet(Sequence):
         if indices.max().item() >= self.seq_length:
             raise ValueError(f"Index {max(indices)} is out of bounds for atom set with {self.seq_length} atoms.")
 
+        # indices is an ndarray here, so __getitem__ returns an AtomSet rather than the
+        # (atomic, charge, chirality) tuple its int overload gives.
         atoms = self[indices]
+        assert isinstance(atoms, AtomSet)
         return atoms
 
     def pad(
@@ -552,12 +558,16 @@ class AtomSet(Sequence):
         res_ids_arrs = split_arr_map.get("res_ids")
         chain_ids_arrs = split_arr_map.get("chain_ids")
 
+        # LazyData entries stay wrapped -- they decode on read, via the properties above.
+        def decode_split(arrs: list) -> list:
+            return [arr if isinstance(arr, LazyData) else AtomSet._decode_bytes(arr) for arr in arrs]
+
         if res_names_arrs is not None:
-            res_names_arrs = [AtomSet._decode_bytes(arr) for arr in res_names_arrs]
+            res_names_arrs = decode_split(res_names_arrs)
         if atom_names_arrs is not None:
-            atom_names_arrs = [AtomSet._decode_bytes(arr) for arr in atom_names_arrs]
+            atom_names_arrs = decode_split(atom_names_arrs)
         if chain_ids_arrs is not None:
-            chain_ids_arrs = [AtomSet._decode_bytes(arr) for arr in chain_ids_arrs]
+            chain_ids_arrs = decode_split(chain_ids_arrs)
 
         atom_sets = []
         for idx in range(len(sizes)):
@@ -611,7 +621,7 @@ class AtomSet(Sequence):
 
         arr = arr.copy() if not is_hdf5 else arr
         curr_idx = 0
-        splits = []
+        splits: list[LazyData | TArr] = []
 
         for n_atoms in sizes:
             if is_hdf5:
@@ -624,11 +634,8 @@ class AtomSet(Sequence):
         return splits
 
     @staticmethod
-    def _decode_bytes(arr: np.ndarray | LazyData | None) -> np.ndarray | LazyData | None:
-        """Decode fixed-length byte string arrays to unicode strings. Returns None or LazyData unchanged."""
-
-        if arr is None or isinstance(arr, LazyData):
-            return arr
+    def _decode_bytes(arr: np.ndarray) -> np.ndarray:
+        """Decode a fixed-length byte string array to unicode. Other dtypes pass through."""
 
         if arr.dtype.kind == "S":
             return arr.astype("U")

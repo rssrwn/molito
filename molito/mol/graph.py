@@ -135,7 +135,7 @@ class GraphMol:
         return super().__str__()
 
     def get_conformer(self, idx: int) -> TArr:
-        return self.confs.get_conformer(idx)
+        return self._require_confs("get a conformer from").get_conformer(idx)
 
     def neighbour_ranks(self, stereo_only: bool = False) -> TArr:
         """Per-atom neighbour rank matrix. See BondSet.neighbour_ranks for details.
@@ -266,20 +266,28 @@ class GraphMol:
 
     # *** Geometric specific functions ***
 
+    def _require_confs(self, operation: str) -> ConfSet:
+        """Return this mol's ConfSet, or explain why a geometric operation cannot run."""
+
+        if self.confs is None:
+            raise ValueError(f"Cannot {operation} a molecule with no conformers.")
+
+        return self.confs
+
     def zero_com(self) -> GraphMol:
-        confs = self.confs.zero_com()
+        confs = self._require_confs("zero the centre of mass of").zero_com()
         return self.copy_with(confs=confs)
 
     def rotate(self, rotation: Rotation | list[Rotation]) -> GraphMol:
-        confs = self.confs.rotate(rotation)
+        confs = self._require_confs("rotate").rotate(rotation)
         return self.copy_with(confs=confs)
 
     def shift(self, shift: TArr | list[TArr]) -> GraphMol:
-        confs = self.confs.shift(shift)
+        confs = self._require_confs("shift").shift(shift)
         return self.copy_with(confs=confs)
 
     def scale(self, scale: float) -> GraphMol:
-        confs = self.confs.scale(scale)
+        confs = self._require_confs("scale").scale(scale)
         return self.copy_with(confs=confs)
 
     # *** IO and conversion utility functions ***
@@ -365,7 +373,12 @@ class GraphMol:
         if rdkit_mol is None:
             raise ValueError("Cannot write SMILES for a molecule that fails RDKit sanitisation.")
 
-        return smiles_from_mol(rdkit_mol, canonical=canonical, explicit_hs=explicit_hs)
+        smiles = smiles_from_mol(rdkit_mol, canonical=canonical, explicit_hs=explicit_hs)
+
+        if smiles is None:
+            raise ValueError("RDKit could not generate a SMILES for this molecule.")
+
+        return smiles
 
     @staticmethod
     def _from_core_repr(dict_repr: dict[str, dict[str, TArr]]) -> GraphMol:
@@ -389,7 +402,14 @@ class GraphMol:
         obj = pickle.loads(data)
         return GraphMol._from_core_repr(obj)
 
-    def to_rdkit(self, sanitise: bool = False) -> Chem.rdchem.Mol:
+    def to_rdkit(self, sanitise: bool = False) -> Chem.rdchem.Mol | None:
+        """Convert to an RDKit molecule, or None if one cannot be built.
+
+        None comes back when RDKit rejects the graph -- most often when `sanitise=True` and
+        the valences do not add up. Callers that cannot handle None should check it; both
+        `to_smiles` and `order_by_bonds` do.
+        """
+
         rdkit_mol = mol_from_atoms(
             self.atomics,
             self.bonds.bonds,
@@ -784,7 +804,7 @@ class GraphBatch(Sequence):
     def save_hdf5_shard(self, save_file: str | Path, columnar_meta: bool = False) -> None:
         hdf5_path = Path(save_file)
 
-        if save_file.exists():
+        if hdf5_path.exists():
             raise RuntimeError(f"File {save_file!s} already exists.")
 
         if hdf5_path.suffix != ".hdf5":
