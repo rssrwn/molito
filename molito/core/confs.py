@@ -92,8 +92,8 @@ class ConfSet(Sequence):
         return self._coords
 
     @property
-    def weights(self) -> TArr:
-        """Returns conf weights array of shape [n_confs,]"""
+    def weights(self) -> TArr | None:
+        """Returns conf weights array of shape [n_confs,], or None if this set has no weights."""
 
         if self._weights is None:
             return None
@@ -325,11 +325,10 @@ class ConfSet(Sequence):
 
             weights.append(weight)
 
-        confs = np.stack(coords, axis=0)
-        weights = np.array(weights) if all([w is not None for w in weights]) else None
+        coord_arr = np.stack(coords, axis=0)
+        weight_arr = np.array(weights) if all([w is not None for w in weights]) else None
 
-        confs = ConfSet(confs, weights=weights)
-        return confs
+        return ConfSet(coord_arr, weights=weight_arr)
 
     @staticmethod
     def from_dict(dict_repr) -> ConfSet:

@@ -595,7 +595,7 @@ class ProteinBatch(Sequence):
     def save_hdf5_shard(self, save_file: str | Path, columnar_meta: bool = False) -> None:
         hdf5_path = Path(save_file)
 
-        if save_file.exists():
+        if hdf5_path.exists():
             raise RuntimeError(f"File {save_file!s} already exists.")
 
         if hdf5_path.suffix != ".hdf5":

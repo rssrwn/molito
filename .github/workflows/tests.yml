@@ -79,6 +79,27 @@ jobs:
       - name: Format
         run: ruff format --check .
 
+  types:
+    name: mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The package deps come too - checking against the real numpy/h5py stubs is the
+      # point. Pinned so a new mypy release can't fail CI on an unrelated change.
+      - name: Install
+        run: |
+          pip install -e ".[interactions]"
+          pip install mypy==2.3.0
+
+      - name: Type check
+        run: mypy
+
   docs:
     name: docs build
     runs-on: ubuntu-latest

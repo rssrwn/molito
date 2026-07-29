@@ -91,7 +91,7 @@ def sample_conformers(
     fast_conf: bool = False,
     opt_iters: int | None = None,
     n_threads: int = 1,
-) -> Chem.rdchem.Mol:
+) -> Chem.rdchem.Mol | None:
     """Create a (set of) conformer(s) for a molecule using the RDKit ETKDGv3 method.
 
     The molecule is copied and the input is not modified.
