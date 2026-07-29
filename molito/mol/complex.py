@@ -392,10 +392,17 @@ class ComplexBatch(Sequence):
         return batch
 
     @staticmethod
-    def load(save_path: str | Path, n_shards: int | None = None) -> ComplexBatch:
+    def load(save_path: str | Path, n_shards: int | None = None, allow_pickle: bool = False) -> ComplexBatch:
         """Load data from a folder that was saved using the save function.
 
         If n_shards is provided, only the first <n_shards> shards will be loaded.
+
+        Args:
+            save_path: Directory produced by `save`.
+            n_shards: If set, only the first `n_shards` shards are loaded.
+            allow_pickle: Permit loading a shard whose metadata is in the legacy pickled-blob
+                format. Off by default because unpickling a file from an untrusted source can
+                execute arbitrary code. Nothing molito writes now contains pickle.
         """
 
         save_path = Path(save_path)
@@ -410,12 +417,12 @@ class ComplexBatch(Sequence):
             n_shards = min(len(sorted_paths), n_shards)
             sorted_paths = sorted_paths[:n_shards]
 
-        shards = [ComplexBatch.load_hdf5_shard(shard_path) for shard_path in sorted_paths]
+        shards = [ComplexBatch.load_hdf5_shard(p, allow_pickle=allow_pickle) for p in sorted_paths]
         batch = ComplexBatch.from_batches(shards)
         return batch
 
     @staticmethod
-    def load_hdf5_shard(save_file: str | Path) -> ComplexBatch:
+    def load_hdf5_shard(save_file: str | Path, allow_pickle: bool = False) -> ComplexBatch:
         save_file = Path(save_file)
 
         if save_file.suffix != ".hdf5":
@@ -424,8 +431,8 @@ class ComplexBatch(Sequence):
         hdf5_file = h5py.File(save_file, "r")
         check_format(hdf5_file, save_file)
 
-        proteins = ProteinBatch._load_from_group(hdf5_file["proteins"])
-        ligands = GraphBatch._load_from_group(hdf5_file["ligands"])
+        proteins = ProteinBatch._load_from_group(hdf5_file["proteins"], allow_pickle=allow_pickle)
+        ligands = GraphBatch._load_from_group(hdf5_file["ligands"], allow_pickle=allow_pickle)
         interaction_sets = InteractionSet.load_from_group(hdf5_file["interactions"])
 
         n = len(proteins)
@@ -436,7 +443,7 @@ class ComplexBatch(Sequence):
             )
 
         complexes = []
-        complex_metas = load_meta(hdf5_file["meta"], n)
+        complex_metas = load_meta(hdf5_file["meta"], n, allow_pickle=allow_pickle)
 
         for protein, ligand, ints, meta in zip(proteins, ligands, interaction_sets, complex_metas, strict=True):
             complexes.append(BindingComplex._load_unchecked(protein, ligand, ints, meta))
@@ -452,7 +459,8 @@ class ComplexBatch(Sequence):
             columnar_meta: If True, store meta as one gzip-compressed HDF5 dataset per key (faster filter-scan,
                 much smaller on disk, memory proportional to accessed columns). Requires metas to share a set of keys.
                 Missing keys are filled with empty strings.
-                If False (default), meta is stored as a single pickle blob per shard.
+                If False (default), meta is stored as one gzip-compressed JSON document per
+                shard, which handles nested or ragged metadata that columnar would stringify.
         """
 
         save_path = Path(save_path)

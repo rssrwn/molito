@@ -483,11 +483,16 @@ class ProteinBatch(Sequence):
         return batch
 
     @staticmethod
-    def load(save_path: str | Path, n_shards: int | None = None) -> ProteinBatch:
+    def load(save_path: str | Path, n_shards: int | None = None, allow_pickle: bool = False) -> ProteinBatch:
         """Load data from a folder that was saved using the save function.
 
-        If shards is provided, only the first <n_shards> shards will be loaded. This is useful for debugging or
-        loading only a subset of the dataset.
+        Args:
+            save_path: Directory produced by `save`.
+            n_shards: If set, only the first `n_shards` shards are loaded. Useful for debugging or
+                for working with a subset of a large dataset.
+            allow_pickle: Permit loading a shard whose metadata is in the legacy pickled-blob
+                format. Off by default because unpickling a file from an untrusted source can
+                execute arbitrary code. Nothing molito writes now contains pickle.
         """
 
         save_path = Path(save_path)
@@ -502,12 +507,12 @@ class ProteinBatch(Sequence):
             n_shards = min(len(sorted_paths) - 1, n_shards)
             sorted_paths = sorted_paths[:n_shards]
 
-        shards = [ProteinBatch.load_hdf5_shard(shard_path) for shard_path in sorted_paths]
+        shards = [ProteinBatch.load_hdf5_shard(p, allow_pickle=allow_pickle) for p in sorted_paths]
         batch = ProteinBatch.from_batches(shards)
         return batch
 
     @staticmethod
-    def load_hdf5_shard(save_file: str | Path) -> ProteinBatch:
+    def load_hdf5_shard(save_file: str | Path, allow_pickle: bool = False) -> ProteinBatch:
         save_file = Path(save_file)
 
         if save_file.suffix != ".hdf5":
@@ -515,12 +520,12 @@ class ProteinBatch(Sequence):
 
         hdf5_file = h5py.File(save_file, "r")
         check_format(hdf5_file, save_file)
-        proteins = ProteinBatch._load_from_group(hdf5_file)
+        proteins = ProteinBatch._load_from_group(hdf5_file, allow_pickle=allow_pickle)
         batch = ProteinBatch(proteins, hdf5_file=hdf5_file)
         return batch
 
     @staticmethod
-    def _load_from_group(group: h5py.Group) -> list[Protein]:
+    def _load_from_group(group: h5py.Group, allow_pickle: bool = False) -> list[Protein]:
         """Load proteins from an HDF5 group using the fast-path factories.
 
         Iterates AtomSet / BondSet / ConfSet slices in lockstep with the meta list and
@@ -539,7 +544,7 @@ class ProteinBatch(Sequence):
         atom_iter = AtomSet._iter_from_group(group["atoms"])
         bond_iter = BondSet._iter_from_group(group["bonds"])
         conf_iter = ConfSet._iter_from_group(group["confs"])
-        metas = load_meta(group["meta"], n)
+        metas = load_meta(group["meta"], n, allow_pickle=allow_pickle)
 
         zipped = zip(atom_iter, bond_iter, conf_iter, metas, strict=True)
         proteins = [Protein._load_unchecked(atoms, bonds, confs, meta) for atoms, bonds, confs, meta in zipped]
@@ -565,7 +570,8 @@ class ProteinBatch(Sequence):
             columnar_meta: If True, store meta as one gzip-compressed HDF5 dataset per key (faster filter-scan,
                 much smaller on disk, memory proportional to accessed columns). Requires metas to share a set of keys.
                 Missing keys are filled with empty strings.
-                If False (default), meta is stored as a single pickle blob per shard.
+                If False (default), meta is stored as one gzip-compressed JSON document per
+                shard, which handles nested or ragged metadata that columnar would stringify.
         """
 
         save_path = Path(save_path)

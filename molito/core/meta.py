@@ -1,12 +1,25 @@
 """Meta storage helpers for GraphBatch / ProteinBatch / ComplexBatch.
 
-Two on-disk formats are supported, dispatched via the meta.attrs["format"] marker:
-    - "blob": one pickled list[dict] stored as a single attribute. Useful when batching mols with very
-        different sets of meta keys.
-    - "columnar": each meta key becomes its own gzip-compressed HDF5 dataset. Column dtype is
-        auto-picked per column: all-int values are stored as int64, all-numeric as float64, anything
-        else (mixed types, strings, or any missing rows) falls back to UTF-8 S-dtype. Useful for very
-        large datasets where all members have the same set of keys in meta dicts.
+Three on-disk formats exist, dispatched via the meta.attrs["format"] marker:
+
+    - "columnar" (default): each meta key becomes its own gzip-compressed HDF5 dataset. Column
+        dtype is auto-picked per column: all-int values are stored as int64, all-numeric as
+        float64, anything else (mixed types, strings, or any missing rows) falls back to UTF-8
+        S-dtype. Best for large datasets whose metas share a set of scalar keys, and the only
+        format that can read a single key without touching the rest.
+    - "json": one gzip-compressed UTF-8 JSON document per shard. Handles metas that columnar
+        cannot represent faithfully -- nested dicts, lists, differing key sets -- because
+        columnar would silently stringify those. This is what a non-columnar save writes.
+    - "blob" (legacy, read-only): one pickled list[dict] in an attribute. Written by molito
+        before the JSON format existed.
+
+Reading a "blob" shard executes pickle, so an HDF5 file from an untrusted source could run
+arbitrary code on load. Loading one therefore requires an explicit `allow_pickle=True`; the
+default refuses with an error naming the file. Nothing molito writes now contains pickle.
+
+JSON is not a byte-exact replacement for pickle: numpy arrays and numpy scalars are written
+as plain JSON lists and numbers, so they come back as lists and Python scalars. Everything
+JSON models natively (str, int, float, bool, None, list, dict) round-trips unchanged.
 
 Loaded metas are always read-only Mapping objects. This matches the immutability of
 the other HDF5-backed components on a loaded mol (atomics, coords, bonds all return
@@ -16,6 +29,7 @@ reassign `mol.meta = {...}` outright.
 
 from __future__ import annotations
 
+import json
 import pickle
 from collections.abc import Iterable, Mapping
 from types import MappingProxyType
@@ -23,14 +37,14 @@ from types import MappingProxyType
 import h5py
 import numpy as np
 
-from molito.core._checks import PICKLE_PROTOCOL
-
 FORMAT_ATTR = "format"
 BLOB_FORMAT = "blob"
 COLUMNAR_FORMAT = "columnar"
+JSON_FORMAT = "json"
 
 _BLOB_ATTR = "metas"
 _COLUMNAR_GROUP = "columns"
+_JSON_DATASET = "json"
 
 
 # ************************
@@ -39,7 +53,11 @@ _COLUMNAR_GROUP = "columns"
 
 
 def save_meta(parent: h5py.Group, metas: list[dict], columnar: bool) -> None:
-    """Create a 'meta' subgroup under `parent` and persist `metas` in the chosen format."""
+    """Create a 'meta' subgroup under `parent` and persist `metas` in the chosen format.
+
+    `columnar=True` writes the columnar format, `columnar=False` writes JSON. The legacy
+    pickled blob format is never written -- see the module docstring.
+    """
 
     meta_group = parent.create_group("meta", track_order=True)
 
@@ -47,14 +65,30 @@ def save_meta(parent: h5py.Group, metas: list[dict], columnar: bool) -> None:
         meta_group.attrs[FORMAT_ATTR] = COLUMNAR_FORMAT
         _save_columnar(meta_group, metas)
     else:
-        meta_group.attrs[FORMAT_ATTR] = BLOB_FORMAT
-        _save_blob(meta_group, metas)
+        meta_group.attrs[FORMAT_ATTR] = JSON_FORMAT
+        _save_json(meta_group, metas)
 
 
-def _save_blob(meta_group: h5py.Group, metas: list[dict]) -> None:
-    # Store as a single pickled list of dicts. Empty dict is used as sentinel for None.
+def _json_default(value):
+    """Coerce the numpy types JSON cannot encode. Lossy for dtype -- see module docstring."""
+
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+
+    raise TypeError(f"meta value of type {type(value).__name__!r} is not JSON serialisable")
+
+
+def _save_json(meta_group: h5py.Group, metas: list[dict]) -> None:
     clean = [m if m is not None else {} for m in metas]
-    meta_group.attrs[_BLOB_ATTR] = np.void(pickle.dumps(clean, protocol=PICKLE_PROTOCOL))
+    payload = json.dumps(clean, default=_json_default).encode("utf-8")
+
+    # A dataset rather than an attribute: attributes have size limits and no compression,
+    # and shards can carry hundreds of thousands of metas.
+    meta_group.create_dataset(
+        _JSON_DATASET, data=np.frombuffer(payload, dtype=np.uint8), compression="gzip", compression_opts=4
+    )
 
 
 def _save_columnar(meta_group: h5py.Group, metas: list[dict]) -> None:
@@ -139,17 +173,28 @@ def _union_keys(metas: list[dict]) -> list[str]:
 # *************************
 
 
-def load_meta(meta_group: h5py.Group, n_mols: int) -> list:
+def load_meta(meta_group: h5py.Group, n_mols: int, allow_pickle: bool = False) -> list:
     """Return a list of `n_mols` read-only meta views. Format is selected by the
     group's 'format' attr.
 
-    Both formats return read-only Mapping objects to match the immutability of other
+    Every format returns read-only Mapping objects to match the immutability of other
     HDF5-backed components (atomics, coords, etc. return fresh copies per access).
     Callers that want to mutate should call `dict(mol.meta)` to get a mutable copy.
 
-    - Blob format: each meta is a pre-loaded `types.MappingProxyType` over a dict.
-    - Columnar format: each meta is a `_ColumnMetaView` that reads columns from HDF5
-      lazily (only the keys actually accessed are materialised).
+    - Columnar: each meta is a `_ColumnMetaView` reading columns from HDF5 lazily, so only
+      the keys actually accessed are materialised.
+    - JSON: the document is decoded once and each meta wrapped in a `MappingProxyType`.
+    - Blob (legacy): unpickles, and so requires `allow_pickle=True`.
+
+    Args:
+        meta_group: The 'meta' group to read.
+        n_mols: Expected number of entries, used to validate the stored data.
+        allow_pickle: Permit loading a legacy pickled blob shard. Off by default because
+            unpickling a file from an untrusted source can execute arbitrary code.
+
+    Raises:
+        ValueError: If the shard is blob format and `allow_pickle` is False, or if the
+            format marker is unrecognised.
     """
 
     fmt = meta_group.attrs.get(FORMAT_ATTR)
@@ -158,13 +203,32 @@ def load_meta(meta_group: h5py.Group, n_mols: int) -> list:
 
     if fmt == COLUMNAR_FORMAT:
         return _load_columnar(meta_group, n_mols)
+    if fmt == JSON_FORMAT:
+        return _load_json(meta_group, n_mols)
     if fmt == BLOB_FORMAT or fmt is None:
-        return _load_blob(meta_group, n_mols)
+        return _load_blob(meta_group, n_mols, allow_pickle)
 
     raise ValueError(f"Unknown meta format {fmt!r} in HDF5 group {meta_group.name!r}")
 
 
-def _load_blob(meta_group: h5py.Group, n_mols: int) -> list:
+def _load_json(meta_group: h5py.Group, n_mols: int) -> list:
+    payload = meta_group[_JSON_DATASET][()].tobytes().decode("utf-8")
+    metas = json.loads(payload)
+
+    if len(metas) != n_mols:
+        raise RuntimeError(f"Meta JSON has {len(metas)} entries but expected {n_mols}")
+
+    return [MappingProxyType(m if m is not None else {}) for m in metas]
+
+
+def _load_blob(meta_group: h5py.Group, n_mols: int, allow_pickle: bool) -> list:
+    if not allow_pickle:
+        raise ValueError(
+            f"HDF5 group {meta_group.file.filename!r} stores metadata in the legacy pickled blob "
+            f"format. Unpickling runs arbitrary code, so it is refused unless you trust the file. "
+            f"Pass allow_pickle=True to load it, or re-save the dataset to write the JSON format."
+        )
+
     blob = meta_group.attrs[_BLOB_ATTR].tobytes()
     metas = pickle.loads(blob)
 

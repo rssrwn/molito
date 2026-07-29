@@ -166,17 +166,36 @@ meta["k"] = "v"
 mol.meta = meta            # or reassign wholesale
 ```
 
-Two on-disk formats exist. The default packs all metadata into one pickled blob per shard.
-`columnar_meta=True` instead writes one gzip-compressed dataset per key, which is markedly
-smaller, allows reading a single key without touching the rest, and makes `meta_column` a
-single dataset read:
+### On-disk formats
+
+`columnar_meta=True` writes one gzip-compressed dataset per key. It is markedly smaller, lets
+you read a single key without touching the rest, and makes `meta_column` a single dataset read:
 
 ```python
 batch.save("dataset/", columnar_meta=True)
 ```
 
-It requires the metadata dictionaries to share a set of keys; missing keys are filled with
-empty strings.
+It suits metadata that is a flat set of scalars. Missing keys are filled with empty strings, and
+anything it cannot represent as a column — a nested dict, a list — is stringified, which loses
+the structure.
+
+`columnar_meta=False` writes one gzip-compressed JSON document per shard instead. Use it when
+your metadata is nested or ragged. JSON has no array type, so numpy arrays come back as lists
+and numpy scalars as Python scalars; everything JSON models natively round-trips unchanged.
+
+### Reading older files
+
+Before the JSON format existed, a non-columnar save wrote a **pickled** blob. Unpickling runs
+arbitrary code, so loading a shard from an untrusted source could execute anything. Those shards
+are therefore refused unless you opt in:
+
+```python
+GraphBatch.load("old_dataset/")                      # raises, naming the file
+GraphBatch.load("old_dataset/", allow_pickle=True)   # loads it
+```
+
+Columnar shards have never contained pickle and are unaffected. Nothing molito writes now
+contains pickle at all.
 
 ## Bond storage layout
 
