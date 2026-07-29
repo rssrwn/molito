@@ -1,0 +1,72 @@
+name: release
+
+# Releasing is: bump the version in pyproject.toml, commit, then push a matching
+# tag (e.g. v0.2.0). Pushing the tag is the only manual trigger - everything below
+# runs automatically from there.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    name: build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The version lives in pyproject.toml, so the tag and the package version can
+      # disagree. Catch that here rather than shipping a v0.2.0 tag containing 0.1.0.
+      - name: Check the tag matches the package version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME implies version $TAG but pyproject.toml declares $VERSION"
+            exit 1
+          fi
+          echo "Releasing version $VERSION"
+
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Verify the wheel imports
+        run: |
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/pip install dist/*.whl
+          /tmp/fresh/bin/python -c "import molito; print('ok', molito.__version__)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+
+    # Must match the environment configured on the PyPI trusted publisher.
+    # Add required reviewers to this environment for a manual approval gate.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/molito
+
+    # Trusted publishing - PyPI verifies this workflow's OIDC identity, so there
+    # is no API token to store or rotate.
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

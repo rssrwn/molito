@@ -1,0 +1,41 @@
+# Gitignore file
+
+# Editors
+.vscode/
+.DS_Store
+*/.DS_Store
+
+# Jupyter notebook checkpoints
+notebooks/.ipynb_checkpoints/
+
+# Python cache files
+__pycache__/
+*/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Log files
+lightning_logs/
+notebooks/lightning_logs/
+wandb/
+nohup.out
+
+# Slurm submission scripts and logs
+subslurm/
+slurm-*
+
+# Results and models files
+results/
+ckpts/
+
+# Data files
+.data/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+site/
+
+# Local Claude files
+.claude/

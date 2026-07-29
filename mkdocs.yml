@@ -1,0 +1,56 @@
+site_name: molito
+site_description: Molecular representation and processing toolkit
+repo_url: https://github.com/rssrwn/molito
+site_url: https://rssrwn.github.io/molito
+
+theme:
+  name: material
+  palette:
+    scheme: default
+    primary: teal
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - toc.integrate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            show_symbol_type_heading: true
+            members_order: source
+            docstring_style: google
+            merge_init_into_class: true
+            show_signature_annotations: true
+            separate_signature: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Tutorial: tutorial.md
+  - Concepts: concepts.md
+  - Stereochemistry: stereochemistry.md
+  - API Reference:
+    - Overview: api/index.md
+    - Molecules: api/mol.md
+    - Atoms: api/atoms.md
+    - Bonds: api/bonds.md
+    - Conformers: api/confs.md
+    - Vocabularies: api/vocab.md
+    - Proteins: api/protein.md
+    - Complexes: api/complex.md
+    - Interactions: api/interactions.md
+    - Utilities: api/util.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.details
+  - toc:
+      permalink: true

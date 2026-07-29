@@ -1,0 +1,131 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch supersedes the previous run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[interactions]"
+
+      - name: Run tests
+        run: python -m unittest discover tests/ -v
+
+  core-only:
+    name: import without optional deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install core only
+        run: pip install -e .
+
+      # prolif, MDAnalysis and xtb are optional - importing the package and reaching
+      # the functions that need them must not require them to be installed.
+      - name: Check optional deps stay optional
+        run: |
+          python -c "
+          import molito
+          from molito.mol import Protein, InteractionSet
+          from molito.geometry import optimise_mol_xtb
+          print('ok', molito.__version__)
+          "
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Pinned so a new ruff release can't fail CI on an unrelated change.
+      # Bump deliberately, in its own commit.
+      - name: Install ruff
+        run: pip install ruff==0.16.0
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format
+        run: ruff format --check .
+
+  docs:
+    name: docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[docs]"
+
+      # --strict turns mkdocstrings warnings into errors, so a renamed or deleted
+      # symbol referenced from the docs fails here rather than shipping broken.
+      - name: Build docs
+        run: mkdocs build --strict
+
+  wheel:
+    name: wheel installs and imports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      # Install the built artifact somewhere clean, so packaging mistakes
+      # (missing package data, bad entry points) fail here and not on PyPI.
+      - name: Install the wheel in a clean environment
+        run: |
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/pip install dist/*.whl
+          /tmp/fresh/bin/python -c "
+          import molito, pathlib
+          from molito.core.pharmacophore import PharmacophoreFinder
+          root = pathlib.Path(molito.__file__).parent
+          assert (root / 'py.typed').is_file(), 'py.typed missing from wheel'
+          assert (root / 'defs' / 'pharmacophore.fdef').is_file(), 'fdef missing from wheel'
+          print('wheel ok', molito.__version__)
+          "

@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "molito"
+version = "0.1.0"
+description = "Molecular representation and processing toolkit for storing and processing small molecules into a training-ready format"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [
+    {name = "Ross Irwin", email = "rssrwn@gmail.com"}
+]
+keywords = [
+    "cheminformatics",
+    "molecules",
+    "machine-learning",
+    "rdkit",
+    "hdf5",
+    "conformers",
+    "drug-discovery"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed"
+]
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.12",
+    "rdkit>=2024.3",
+    "h5py>=3.10",
+    "biotite>=1.0",
+    "more-itertools>=10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rssrwn/molito"
+Documentation = "https://rssrwn.github.io/molito"
+Repository = "https://github.com/rssrwn/molito"
+Issues = "https://github.com/rssrwn/molito/issues"
+
+[project.optional-dependencies]
+interactions = ["prolif>=2.0", "MDAnalysis"]
+dev = ["matplotlib", "jupyter", "ipykernel", "py3Dmol", "ruff==0.16.0", "build", "twine"]
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "ruff==0.16.0"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.format]
+# Ruff also formats Python blocks inside Markdown. The doc samples align trailing
+# comments into a column, which reads better than the single-space form ruff wants.
+exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "RUF"]
+ignore = [
+    "RUF012",  # mutable class defaults - intentional in BondEncoding / VocabConfig
+    "RUF023",  # __slots__ order mirrors the constructor args, which reads better than alphabetical
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # modules that exist to re-export
+
+[tool.setuptools.packages.find]
+include = ["molito*"]
+
+[tool.setuptools.package-data]
+molito = ["defs/*.fdef", "py.typed"]

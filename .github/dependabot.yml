@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  # Keeps actions/checkout, actions/setup-python etc. current. Without this they
+  # quietly rot until a runner deprecation breaks CI.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+
+  # Only reaches the pinned tooling (ruff) - the runtime deps use lower bounds,
+  # which dependabot leaves alone.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "deps"
