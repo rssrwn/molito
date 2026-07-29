@@ -9,6 +9,13 @@ updates:
       interval: monthly
     commit-message:
       prefix: "ci"
+    # Without grouping, dependabot opens one PR per action, which on a repo with
+    # five workflow steps means five near-identical PRs a month. One grouped PR
+    # gets the same CI verification with a fraction of the noise.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Only reaches the pinned tooling (ruff) - the runtime deps use lower bounds,
   # which dependabot leaves alone.
@@ -18,3 +25,7 @@ updates:
       interval: monthly
     commit-message:
       prefix: "deps"
+    groups:
+      python-tooling:
+        patterns:
+          - "*"
