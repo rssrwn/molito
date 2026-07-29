@@ -679,7 +679,12 @@ class GraphBatch(Sequence):
         return batch
 
     @staticmethod
-    def load(save_path: str | Path, n_shards: int | None = None, materialise: bool = True) -> GraphBatch:
+    def load(
+        save_path: str | Path,
+        n_shards: int | None = None,
+        materialise: bool = True,
+        allow_pickle: bool = False,
+    ) -> GraphBatch:
         """Load a sharded directory of HDF5 files into a batch.
 
         Note what `materialise` does *not* control: the underlying arrays (coords, atomics,
@@ -702,6 +707,9 @@ class GraphBatch(Sequence):
                   expect reassignments like `mol.atoms = ...` to persist across lookups. For all
                   loaded batches, `mol.meta` is a read-only Mapping view -- see
                   `molito.core.meta` for details.
+            allow_pickle: Permit loading a shard whose metadata is in the legacy pickled-blob
+                format. Off by default because unpickling a file from an untrusted source can
+                execute arbitrary code. Nothing molito writes now contains pickle.
         """
 
         save_path = Path(save_path)
@@ -717,14 +725,14 @@ class GraphBatch(Sequence):
 
         if not materialise:
             files = [h5py.File(p, "r") for p in sorted_paths]
-            return LazyGraphBatch(files)
+            return LazyGraphBatch(files, allow_pickle=allow_pickle)
 
-        shards = [GraphBatch.load_hdf5_shard(shard_path) for shard_path in sorted_paths]
+        shards = [GraphBatch.load_hdf5_shard(p, allow_pickle=allow_pickle) for p in sorted_paths]
         batch = GraphBatch.from_batches(shards)
         return batch
 
     @staticmethod
-    def load_hdf5_shard(save_file: str | Path) -> GraphBatch:
+    def load_hdf5_shard(save_file: str | Path, allow_pickle: bool = False) -> GraphBatch:
         save_file = Path(save_file)
 
         if save_file.suffix != ".hdf5":
@@ -732,7 +740,7 @@ class GraphBatch(Sequence):
 
         hdf5_file = h5py.File(save_file, "r")
         check_format(hdf5_file, save_file)
-        mols = GraphBatch._load_from_group(hdf5_file)
+        mols = GraphBatch._load_from_group(hdf5_file, allow_pickle=allow_pickle)
         return GraphBatch(mols, hdf5_file=hdf5_file)
 
     def _to_core_repr(self) -> list[dict[str, dict[str, TArr]]]:
@@ -753,7 +761,8 @@ class GraphBatch(Sequence):
             columnar_meta: If True, store meta as one gzip-compressed HDF5 dataset per key (faster filter-scan,
                 much smaller on disk, memory proportional to accessed columns). Requires metas to share a set of keys.
                 Missing keys are filled with empty strings.
-                If False (default), meta is stored as a single pickle blob per shard.
+                If False (default), meta is stored as one gzip-compressed JSON document per
+                shard, which handles nested or ragged metadata that columnar would stringify.
         """
 
         save_path = Path(save_path)
@@ -786,7 +795,7 @@ class GraphBatch(Sequence):
             self._save_to_group(f, columnar_meta=columnar_meta)
 
     @staticmethod
-    def _load_from_group(group: h5py.Group) -> list[GraphMol]:
+    def _load_from_group(group: h5py.Group, allow_pickle: bool = False) -> list[GraphMol]:
         """Load molecules from an HDF5 group using the fast-path factories.
 
         Iterates AtomSet / BondSet / ConfSet slices in lockstep with the meta list and
@@ -805,7 +814,7 @@ class GraphBatch(Sequence):
         atom_iter = AtomSet._iter_from_group(group["atoms"])
         bond_iter = BondSet._iter_from_group(group["bonds"])
         conf_iter = ConfSet._iter_from_group(group["confs"]) if has_confs else iter([None] * n)
-        metas = load_meta(group["meta"], n)
+        metas = load_meta(group["meta"], n, allow_pickle=allow_pickle)
 
         zipped = zip(atom_iter, bond_iter, conf_iter, metas, strict=True)
         mols = [GraphMol._load_unchecked(atoms, bonds, confs, meta) for atoms, bonds, confs, meta in zipped]
@@ -904,9 +913,9 @@ class LazyGraphBatch(GraphBatch):
             convenient for training batches.
     """
 
-    def __init__(self, hdf5_files: list[h5py.File]):
+    def __init__(self, hdf5_files: list[h5py.File], allow_pickle: bool = False):
         self._open_fps = hdf5_files
-        self._shards = [self._build_shard_state(f) for f in hdf5_files]
+        self._shards = [self._build_shard_state(f, allow_pickle=allow_pickle) for f in hdf5_files]
 
         shard_n = np.array([s["n"] for s in self._shards], dtype=np.int64)
         self._shard_boundaries = np.concatenate([[0], np.cumsum(shard_n)])
@@ -915,7 +924,7 @@ class LazyGraphBatch(GraphBatch):
         self._mols = _LazyMolList(self)
 
     @staticmethod
-    def _build_shard_state(f: h5py.File) -> dict:
+    def _build_shard_state(f: h5py.File, allow_pickle: bool = False) -> dict:
         """Precompute per-shard dataset refs, sizes, and cumulative offsets."""
 
         check_format(f, f.filename)
@@ -954,7 +963,7 @@ class LazyGraphBatch(GraphBatch):
         shard_state = {
             "n": n,
             "meta_group": f["meta"],
-            "metas": load_meta(f["meta"], n),
+            "metas": load_meta(f["meta"], n, allow_pickle=allow_pickle),
             "atoms": {
                 "atomics": atom_g["atomics"],
                 "charges": atom_g["charges"],
