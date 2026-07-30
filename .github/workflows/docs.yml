@@ -1,0 +1,53 @@
+name: docs
+
+# Publishes the mkdocs site to GitHub Pages. Pull requests are not deployed - the docs
+# job in tests.yml builds them with --strict there, so a broken reference fails review
+# rather than reaching the published site.
+on:
+  push:
+    branches: [main]
+  # Lets you republish without a code change, e.g. after fixing Pages settings.
+  workflow_dispatch:
+
+# The default token is read-only; Pages deployment needs these three.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build and deploy
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[docs]"
+
+      - name: Build
+        run: mkdocs build --strict
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
