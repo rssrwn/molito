@@ -1,6 +1,13 @@
 # *Molito* - Small Molecule Data Processing Utility
 
+[![PyPI](https://img.shields.io/pypi/v/molito.svg)](https://pypi.org/project/molito/)
+[![Python versions](https://img.shields.io/pypi/pyversions/molito.svg)](https://pypi.org/project/molito/)
+[![Tests](https://github.com/rssrwn/molito/actions/workflows/tests.yml/badge.svg)](https://github.com/rssrwn/molito/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A Python toolkit for processing and storing small molecule and protein data into a training-ready format.
+
+**[Documentation](https://rssrwn.github.io/molito/)** · **[Tutorial](https://rssrwn.github.io/molito/tutorial/)** · **[API reference](https://rssrwn.github.io/molito/api/)**
 
 Molito provides compact, serialisable representations for molecular graphs with atoms, bonds, and 3D conformer ensembles. It's designed for machine learning workflows where you need to go from RDKit molecules to structured arrays efficiently, with full support for stereochemistry (E/Z bond directions, tetrahedral chirality) preserved through round-trips. It also supports protein structures and protein-ligand complexes for binding data preprocessing, and integrates directly with RDKit, biotite and numpy.
 
@@ -16,12 +23,13 @@ Molito provides compact, serialisable representations for molecular graphs with 
 
 ## Installation
 
-> Not yet on PyPI. For now, install editable from a local clone (see [Development](#development)).
-> Once published the install will be `pip install molito`.
+```bash
+pip install molito
+```
 
 Requires Python >= 3.11.
 
-Optional extras:
+Optional extras, installed as `pip install "molito[interactions]"`:
 
 | extra | adds | enables |
 |---|---|---|
@@ -164,10 +172,12 @@ system.coords       # [n_complex_atoms, 3]
 
 ## Documentation
 
-- [Tutorial](docs/tutorial.md) — an SDF through to a padded training batch
-- [Concepts](docs/concepts.md) — bond encodings vs vocabulary indices, atom ordering, deferred loading, metadata
-- [Stereochemistry](docs/stereochemistry.md) — how stereo survives reordering, and what would break it
-- [Getting Started](docs/getting-started.md) — installation and the core classes
+Full documentation lives at **[rssrwn.github.io/molito](https://rssrwn.github.io/molito/)**.
+
+- [Tutorial](https://rssrwn.github.io/molito/tutorial/) — an SDF through to a padded training batch
+- [Concepts](https://rssrwn.github.io/molito/concepts/) — bond encodings vs vocabulary indices, atom ordering, deferred loading, metadata
+- [Stereochemistry](https://rssrwn.github.io/molito/stereochemistry/) — how stereo survives reordering, and what would break it
+- [API reference](https://rssrwn.github.io/molito/api/) — every public class and function
 
 Build the site locally with `mkdocs serve` after installing the `docs` extra.
 
@@ -203,6 +213,15 @@ CI enforces lint, formatting and type checking, so run these before opening a PR
 ```bash
 ruff format . && ruff check . && mypy
 ```
+
+## Contributing
+
+Issues and pull requests are welcome. CI runs the test suite on Python 3.11-3.13, checks that
+the package still imports without the optional dependencies, and enforces ruff, mypy and a
+strict docs build — so run the commands above before opening a PR.
+
+Notable changes are recorded in the [changelog](CHANGELOG.md), which flags on-disk format
+changes separately from code changes.
 
 ## License
 
