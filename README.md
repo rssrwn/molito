@@ -1,38 +1,8 @@
-# molito
+# *Molito* - Small Molecule Data Processing Utility
 
-A Python toolkit for storing and processing small molecules into a training-ready format.
+A Python toolkit for processing and storing small molecule and protein data into a training-ready format.
 
-molito provides compact, serialisable representations for molecular graphs with atoms, bonds, and 3D conformer ensembles. It's designed for machine learning workflows where you need to go from RDKit molecules to structured arrays efficiently, with full support for stereochemistry (E/Z bond directions, tetrahedral chirality) preserved through round-trips.
-
-It also supports protein structures and protein-ligand complexes for binding data preprocessing. Dataset-specific preprocessing (BindingNet, SAIR, PLINDER) is deliberately kept out of this package and lives in a separate repository.
-
-## Why molito
-
-The obvious way to keep a molecular dataset around is a pickled list of RDKit molecules. That
-works until the dataset stops fitting comfortably in memory. Here are 100,000 BindingNet
-ligands stored four ways, measured on the same machine:
-
-| format | on disk | load time | peak memory |
-|---|---|---|---|
-| pickled RDKit mols | 44.8 MB | 0.96 s | 1537 MB |
-| pickled + gzip | **8.4 MB** | 1.07 s | 1540 MB |
-| SDF | 258.7 MB | 9.67 s | 2351 MB |
-| molito HDF5 | 30.1 MB | 0.37 s | **228 MB** |
-| molito, `materialise=False` | 30.1 MB | **0.02 s** | **159 MB** |
-
-**Memory is the real difference** — 228 MB against 1537 MB for the same molecules, because
-molito keeps typed arrays rather than a graph of Python and C++ objects. That is what decides
-whether a dataset fits in a dataloader worker, and the gap widens with dataset size.
-
-Being straight about the rest: **gzipped pickle is smaller on disk than molito**, and if
-minimum bytes is all you want, it wins. What it costs you is random access — you must
-decompress and unpickle the entire file to look at one molecule, which is why its load time and
-memory are unchanged from raw pickle. molito reads one molecule, or one metadata column, without
-touching the rest.
-
-What you also get, which none of the alternatives give you: stereochemistry that provably
-survives atom reordering, a frozen on-disk encoding with a version stamp, and vocabularies that
-let you switch features like chirality on and off without rewriting the dataset.
+Molito provides compact, serialisable representations for molecular graphs with atoms, bonds, and 3D conformer ensembles. It's designed for machine learning workflows where you need to go from RDKit molecules to structured arrays efficiently, with full support for stereochemistry (E/Z bond directions, tetrahedral chirality) preserved through round-trips. It also supports protein structures and protein-ligand complexes for binding data preprocessing, and integrates directly with RDKit, biotite and numpy.
 
 ## Features
 
