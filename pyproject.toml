@@ -52,8 +52,8 @@ Issues = "https://github.com/rssrwn/molito/issues"
 
 [project.optional-dependencies]
 interactions = ["prolif>=2.0", "MDAnalysis"]
-dev = ["matplotlib", "jupyter", "ipykernel", "py3Dmol", "ruff==0.16.0", "mypy==2.3.0", "build", "twine"]
-docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "ruff==0.16.0"]
+dev = ["matplotlib", "jupyter", "ipykernel", "py3Dmol", "ruff==0.16.6", "mypy==2.3.1", "build", "twine"]
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "ruff==0.16.6"]
 
 [tool.ruff]
 line-length = 120
