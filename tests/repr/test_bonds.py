@@ -200,12 +200,13 @@ class TestBondSetFromRdkit(unittest.TestCase):
             _, is_arom, _ = BondEncoding.decode(bonds.types[i].item())
             self.assertTrue(is_arom)
 
-    def test_upper_triangular(self):
-        mol = Chem.MolFromSmiles("CCCC")
+    def test_import_preserves_endpoint_order(self):
+        mol = Chem.MolFromSmiles("C/C=C/C")
+        mol = Chem.RenumberAtoms(mol, [3, 1, 2, 0])
         bonds = BondSet.from_rdkit(mol)
-        for i in range(len(bonds)):
-            start, end, _ = bonds[i]
-            self.assertLess(start, end)
+        expected = [[b.GetBeginAtomIdx(), b.GetEndAtomIdx()] for b in mol.GetBonds()]
+        np.testing.assert_array_equal(bonds.indices, expected)
+        self.assertTrue(any(start > end for start, end in expected))
 
     def test_ez_bonds_preserved(self):
         mol = Chem.MolFromSmiles("C/C=C/C")

@@ -206,8 +206,8 @@ class BondSet(Sequence):
     """Set of bonds for a single molecule or protein chain.
 
     Bonds are stored as an [n_bonds, 3] int16 array where each row is [start_idx, end_idx, bond_encoding_index].
-    Always upper triangular (start < end). Bond types are encoded via BondEncoding which preserves
-    aromaticity and E/Z bond directions.
+    Each bond is stored once, preserving its begin/end order on RDKit import and atom permutation.
+    Bond types are encoded via BondEncoding which preserves aromaticity and E/Z bond directions.
 
     Args:
         bonds: Bond array, shape [n_bonds, 3].
@@ -459,6 +459,21 @@ class BondSet(Sequence):
 
     @staticmethod
     def from_rdkit(mol: Chem.rdchem.Mol) -> BondSet:
+        # Aromatisation can leave / and \ tags on ring bonds (e.g. benzene
+        # parsed from C1=C\C=C/C=C1). Kekulisation may turn such a bond into a
+        # double bond, for which our storage has no directional encoding.
+        # Rebuild directions from perceived stereo before kekulising. Clearing
+        # only the offending tags could discard real adjacent alkene stereo.
+        # Work on a copy: callers retain their atom tags, properties and coords.
+        directions = (Chem.BondDir.ENDUPRIGHT, Chem.BondDir.ENDDOWNRIGHT)
+        if any(b.GetIsAromatic() and b.GetBondDir() in directions for b in mol.GetBonds()):
+            mol = Chem.Mol(mol)
+            Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+            for bond in mol.GetBonds():
+                if bond.GetBondDir() in directions:
+                    bond.SetBondDir(Chem.BondDir.NONE)
+            Chem.SetDoubleBondNeighborDirections(mol)
+
         # Kekulise so aromatic bonds are converted to single/double (aromatic property still stored)
         kekul_mol = Chem.Mol(mol)
         Chem.Kekulize(kekul_mol)
@@ -469,9 +484,8 @@ class BondSet(Sequence):
             bond_start = bond.GetBeginAtomIdx()
             bond_end = bond.GetEndAtomIdx()
 
-            # Keep upper tri only (start < end)
-            if bond_start > bond_end:
-                bond_start, bond_end = bond_end, bond_start
+            # Direction tags are relative to these endpoints. Preserve their
+            # order even when start > end, just as permute_atoms does.
 
             bond_type = bond.GetBondType()
             is_arom = bond.GetIsAromatic()

@@ -12,6 +12,21 @@ wrote it, and readers refuse shards from a newer molito rather than misreading t
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-13
+
+### Fixed
+
+- RDKit import preserves bond endpoint order instead of forcing `start < end`,
+  preventing loss or inversion of E/Z stereochemistry when directional bonds
+  run from a higher atom index to a lower one. Existing files remain readable;
+  affected graphs previously written with reversed endpoints must be regenerated
+  from their original molecules to restore the intended stereochemistry.
+- RDKit import now normalises leftover directional tags on aromatic bonds before
+  kekulisation, avoiding `KeyError: '2_T_D'` / `'2_T_U'` while preserving perceived
+  alkene stereochemistry. This also applies when `clean_stereo=False`, without
+  changing the input molecule or its atom chirality tags. Existing bond storage
+  codes and the HDF5 format are unchanged.
+
 ## [0.1.0] - 2026-07-30
 
 First public release.
@@ -52,5 +67,6 @@ First public release.
   load. Those shards now require an explicit `allow_pickle=True`. Columnar shards were never
   affected, and nothing molito writes now contains pickle.
 
-[Unreleased]: https://github.com/rssrwn/molito/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rssrwn/molito/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/rssrwn/molito/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rssrwn/molito/releases/tag/v0.1.0
