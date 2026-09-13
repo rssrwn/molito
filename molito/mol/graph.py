@@ -310,7 +310,8 @@ class GraphMol:
                 actually carry E/Z). Useful when ingesting datasets where source SMILES /
                 SDFs over-declare stereo — downstream consumers keying off `atoms.chirality`
                 or bond direction (e.g. inference-time stereo guidance) otherwise fire on
-                these "ghost" tags. Input mol is never mutated. Default False is verbatim.
+                these "ghost" tags. Input mol is never mutated. Default False preserves
+                atom tags; redundant aromatic bond directions are normalised in either mode.
         """
 
         if clean_stereo:

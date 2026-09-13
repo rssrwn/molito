@@ -199,8 +199,8 @@ contains pickle at all.
 
 ## Bond storage layout
 
-Bonds live in an `[n_bonds, 3]` array of `[start, end, encoding]`, always with `start < end`
-— each bond appears once, not twice.
+Bonds live in an `[n_bonds, 3]` array of `[start, end, encoding]`. Each bond appears once,
+preserving its original begin/end order on RDKit import; `start` can be greater than `end`.
 
 Two invariants hold and are load-bearing for stereochemistry: **row order is never changed**,
 and **the two index columns of a row are never swapped**. Sorting bond rows or re-imposing
