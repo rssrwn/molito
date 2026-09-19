@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "molito"
-version = "0.1.1"
+version = "0.2.0"
 description = "Molecular representation and processing toolkit for storing and processing small molecules into a training-ready format"
 readme = "README.md"
 license = "MIT"
@@ -78,7 +78,7 @@ ignore = [
 include = ["molito*"]
 
 [tool.setuptools.package-data]
-molito = ["defs/*.fdef", "py.typed"]
+molito = ["defs/*.fdef", "defs/*.json", "defs/*.md", "py.typed"]
 
 [tool.mypy]
 # No python_version pin: numpy's bundled stubs use `type` statements that mypy only parses

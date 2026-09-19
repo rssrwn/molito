@@ -41,6 +41,9 @@ def one_hot_encode(indices: TArr, vocab_size: int) -> TArr:
         np.ndarray: One-hot encoded vectors, shape [*, vocab_size].
     """
 
+    if indices.dtype.kind not in "iu" or (indices < 0).any() or (indices >= vocab_size).any():
+        raise ValueError("Indices must be integers in [0, vocab_size).")
+
     one_hots = np.zeros((*indices.shape, vocab_size), dtype=np.long)
     np.put_along_axis(one_hots, np.expand_dims(indices, -1), 1.0, axis=-1)
     return one_hots

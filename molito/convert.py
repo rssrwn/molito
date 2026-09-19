@@ -27,10 +27,9 @@ def mol_is_valid(mol: Chem.rdchem.Mol, with_hs: bool = True, connected: bool = T
         return False
 
     mol_copy = Chem.Mol(mol)
-    if not with_hs:
-        mol_copy = Chem.RemoveAllHs(mol_copy)
-
     try:
+        if not with_hs:
+            mol_copy = Chem.RemoveAllHs(mol_copy)
         AllChem.SanitizeMol(mol_copy)
     except Exception:
         return False
@@ -60,10 +59,9 @@ def smiles_from_mol(mol: Chem.rdchem.Mol, canonical: bool = True, explicit_hs: b
     if mol is None:
         return None
 
-    if explicit_hs:
-        mol = Chem.AddHs(mol)
-
     try:
+        if explicit_hs:
+            mol = Chem.AddHs(mol)
         smiles = Chem.MolToSmiles(mol, canonical=canonical)
     except Exception:
         smiles = None

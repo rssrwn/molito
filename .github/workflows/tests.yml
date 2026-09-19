@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 # A new push to the same branch supersedes the previous run.
 concurrency:
@@ -53,7 +54,7 @@ jobs:
           python -c "
           import molito
           from molito.mol import Protein, InteractionSet
-          from molito.geometry import optimise_mol_xtb
+          from molito.geometry import calc_energy_xtb, optimise_mol_xtb
           print('ok', molito.__version__)
           "
 
@@ -142,11 +143,18 @@ jobs:
         run: |
           python -m venv /tmp/fresh
           /tmp/fresh/bin/pip install dist/*.whl
-          /tmp/fresh/bin/python -c "
+          /tmp/fresh/bin/python -I -c "
           import molito, pathlib
           from molito.core.pharmacophore import PharmacophoreFinder
+          from molito.core.vocab import StringVocab
+          from molito.tokenise import RegexTokeniser
           root = pathlib.Path(molito.__file__).parent
           assert (root / 'py.typed').is_file(), 'py.typed missing from wheel'
           assert (root / 'defs' / 'pharmacophore.fdef').is_file(), 'fdef missing from wheel'
+          assert len(StringVocab.characters()) == 78
+          assert len(StringVocab.smiles()) == 169
+          tokeniser = RegexTokeniser.smiles()
+          smiles = '[13CH3:123][C@@H](F)Cl.*'
+          assert tokeniser.decode(tokeniser.encode(smiles)) == smiles
           print('wheel ok', molito.__version__)
           "

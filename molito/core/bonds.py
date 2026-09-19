@@ -497,7 +497,7 @@ class BondSet(Sequence):
             bond_index = BondEncoding.encode(bond_type, is_arom, direction=direction)
             bond_list.append([bond_start, bond_end, bond_index])
 
-        bonds = BondSet(np.array(bond_list))
+        bonds = BondSet(np.array(bond_list, dtype=np.int16).reshape(-1, 3))
         return bonds
 
     @staticmethod

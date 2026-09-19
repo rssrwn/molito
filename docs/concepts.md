@@ -194,8 +194,21 @@ GraphBatch.load("old_dataset/")                      # raises, naming the file
 GraphBatch.load("old_dataset/", allow_pickle=True)   # loads it
 ```
 
-Columnar shards have never contained pickle and are unaffected. Nothing molito writes now
-contains pickle at all.
+Columnar **metadata** has never contained pickle. Complex interaction payloads written before
+0.2.0 used pickle independently of the metadata format and now require the same opt-in:
+
+```python
+from molito import ComplexBatch
+
+batch = ComplexBatch.load("trusted_old_complexes/", allow_pickle=True)
+try:
+    batch.save("converted_complexes/")
+finally:
+    batch.close_hdf5()
+```
+
+New HDF5 shards contain no Python pickle. Existing graph/protein/complex `to_bytes`/`from_bytes`
+methods still use pickle and should only be used with trusted bytes.
 
 ## Bond storage layout
 
@@ -209,12 +222,18 @@ reorder bonds, read [Stereochemistry](stereochemistry.md) first.
 
 ## On-disk format versioning
 
-Every shard carries a `molito_format_version` attribute at its root, plus the package version
+Graph, protein and complex shards carry a `molito_format_version` attribute at its root, plus the package version
 that wrote it. Readers refuse shards written by a newer molito rather than misreading datasets
 whose layout has moved.
 
 Shards written before versioning existed have no attribute and load as version 0. They remain
 readable — the layout did not change when the stamp was introduced.
+
+Version 2 (molito 0.2.0) changes complex interaction payloads to JSON. Versions 0 and 1 remain
+readable, with explicit opt-in for legacy pickle payloads. Graph and protein writers retain
+format 1, so their output remains readable by molito 0.1.1. Complex writers stamp version 2,
+which older readers reject. The atom, bond and conformer array layouts have not changed. Native string/RDKit batches
+use separate representation/version markers, described in [Molecular representations](representations.md).
 
 Adding an *optional* dataset does not require a version bump, because readers treat a missing
 dataset as "not stored". That is how per-atom chain IDs were added without breaking existing

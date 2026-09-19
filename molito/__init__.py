@@ -8,7 +8,20 @@ protein-ligand complexes.
 from importlib.metadata import PackageNotFoundError, version
 
 from molito.core import PT, AtomSet, BondEncoding, BondSet, ConfSet, VocabConfig
-from molito.mol import BindingComplex, ComplexBatch, GraphBatch, GraphMol, Protein, ProteinBatch
+from molito.mol import (
+    BindingComplex,
+    ComplexBatch,
+    ConversionError,
+    GraphBatch,
+    GraphMol,
+    MolBatch,
+    MolRepr,
+    Protein,
+    ProteinBatch,
+    RDKitMol,
+    SmilesMol,
+    StringMol,
+)
 
 try:
     __version__ = version("molito")
@@ -24,10 +37,16 @@ __all__ = [
     "BondSet",
     "ComplexBatch",
     "ConfSet",
+    "ConversionError",
     "GraphBatch",
     "GraphMol",
+    "MolBatch",
+    "MolRepr",
     "Protein",
     "ProteinBatch",
+    "RDKitMol",
+    "SmilesMol",
+    "StringMol",
     "VocabConfig",
     "__version__",
 ]

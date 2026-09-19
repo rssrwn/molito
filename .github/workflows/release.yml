@@ -8,8 +8,13 @@ on:
     tags: ["v*"]
 
 jobs:
+  validate:
+    name: validate release
+    uses: ./.github/workflows/tests.yml
+
   build:
     name: build distributions
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -40,7 +45,7 @@ jobs:
         run: |
           python -m venv /tmp/fresh
           /tmp/fresh/bin/pip install dist/*.whl
-          /tmp/fresh/bin/python -c "import molito; print('ok', molito.__version__)"
+          /tmp/fresh/bin/python -I -c "import molito; print('ok', molito.__version__)"
 
       - uses: actions/upload-artifact@v7
         with:

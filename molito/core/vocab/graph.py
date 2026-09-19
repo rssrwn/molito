@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import pickle
-from collections.abc import Iterator, Mapping
-from typing import Generic, TypeVar
-
 import numpy as np
 from rdkit import Chem
 
-from molito.core._checks import MASK_TOKEN, PAD_TOKEN, PICKLE_PROTOCOL, check_type_all, check_unique
+from molito.core._checks import MASK_TOKEN, PAD_TOKEN
 from molito.core.presets import CHIRAL_ELIGIBLE, DRUG_LIKE_ATOMS
 
-T = TypeVar("T")
+from .base import Vocabulary
+
 TArr = np.ndarray
 
 
@@ -27,79 +24,6 @@ RDKIT_CHIRAL_TO_INT = {
 INT_TO_RDKIT_CHIRAL = {v: k for k, v in RDKIT_CHIRAL_TO_INT.items()}
 
 CHIRAL_SUFFIXES = {CHIRAL_CW: "CW", CHIRAL_CCW: "CCW"}
-
-
-# ************************************
-# ***** Generic Vocabulary class *****
-# ************************************
-
-
-class Vocabulary(Generic[T], Mapping):
-    """Generic vocabulary class which maps tokens <--> indices."""
-
-    def __init__(self, tokens: list[T]):
-        check_unique(tokens, "tokens list")
-
-        token_idx_map = {token: idx for idx, token in enumerate(tokens)}
-        idx_token_map = {idx: token for idx, token in enumerate(tokens)}
-
-        self.token_idx_map = token_idx_map
-        self.idx_token_map = idx_token_map
-
-    # *** Mapping Collection methods ***
-
-    def __len__(self) -> int:
-        return len(self.token_idx_map)
-
-    def __getitem__(self, token: T) -> int:
-        return self.get_index(token)
-
-    def __contains__(self, token: T) -> bool:
-        return token in self.token_idx_map
-
-    def __iter__(self) -> Iterator[T]:
-        return iter(self.token_idx_map)
-
-    # *** Mapping functions ***
-
-    def get_token(self, index: int) -> T:
-        return self.idx_token_map[index]
-
-    def get_index(self, token: T) -> int:
-        return self.token_idx_map[token]
-
-    def tokens_from_indices(self, indices: list[int]) -> list[T]:
-        check_type_all(indices, int, "indices list")
-        return [self.idx_token_map[idx] for idx in indices]
-
-    def indices_from_tokens(self, tokens: list[T]) -> list[int]:
-        return [self.token_idx_map[token] for token in tokens]
-
-    # *** Check contents of vocab map ***
-
-    def contains_token(self, token: T) -> bool:
-        return token in self.token_idx_map
-
-    def contains_index(self, index: int) -> bool:
-        return index in self.idx_token_map
-
-    # *** Iter functions ***
-
-    def iter_tokens(self) -> Iterator[T]:
-        return iter(self.token_idx_map)
-
-    def iter_indices(self) -> Iterator[int]:
-        return iter(self.idx_token_map)
-
-    # *** Saving and loading functionality ***
-
-    def to_bytes(self) -> bytes:
-        tokens = list(self.token_idx_map.keys())
-        return pickle.dumps(tokens, protocol=PICKLE_PROTOCOL)
-
-    @staticmethod
-    def from_bytes(data: bytes) -> Vocabulary:
-        return Vocabulary(pickle.loads(data))
 
 
 # **********************************
@@ -217,6 +141,8 @@ class BondVocab(Vocabulary[str]):
             fall back to their base bond when the vocab was built with directions=False.
         """
 
+        if enc_arr.dtype.kind not in "iu" or (enc_arr < 0).any() or (enc_arr >= self._encoding.size()).any():
+            raise ValueError("Bond encoding indices must be integers within the storage encoding range.")
         out = self._enc_to_model_lut[enc_arr]
         if (out == -1).any():
             bad = np.unique(enc_arr[out == -1])
@@ -238,42 +164,3 @@ class BondVocab(Vocabulary[str]):
 
     def get_mask_index(self) -> int:
         return self.token_idx_map["-1_F"]
-
-
-# *******************************
-# ***** Vocab Configuration *****
-# *******************************
-
-
-class VocabConfig:
-    """Central configuration for molecular vocabularies."""
-
-    _chirality: bool = True
-    _directions: bool = True
-    _atom_tokens: list[str] = None
-
-    atoms: AtomVocab = AtomVocab.build(chirality=True)
-    bonds: BondVocab = BondVocab.build(directions=True)
-
-    @classmethod
-    def set_chirality(cls, enabled: bool):
-        cls._chirality = enabled
-        cls.atoms = AtomVocab.build(tokens=cls._atom_tokens, chirality=enabled)
-
-    @classmethod
-    def set_directions(cls, enabled: bool):
-        cls._directions = enabled
-        cls.bonds = BondVocab.build(directions=enabled)
-
-    @classmethod
-    def set_atom_tokens(cls, tokens: list[str]):
-        cls._atom_tokens = tokens
-        cls.atoms = AtomVocab.build(tokens=tokens, chirality=cls._chirality)
-
-    @classmethod
-    def reset(cls):
-        cls._chirality = True
-        cls._directions = True
-        cls._atom_tokens = None
-        cls.atoms = AtomVocab.build(chirality=True)
-        cls.bonds = BondVocab.build(directions=True)

@@ -91,6 +91,7 @@ class AtomSet(Sequence):
 
         check_type(chirality, [np.ndarray, LazyData], "chirality")
         check_shape_len(chirality, 1, "chirality")
+        check_shapes_equal(atomics, chirality, 0)
 
         # Validate shapes of optional residue annotations if provided
         if res_names is not None:
@@ -200,6 +201,9 @@ class AtomSet(Sequence):
     @property
     def chirality(self) -> TArr:
         """Returns array of shape [n_atoms,]"""
+
+        if self._chirality is None:
+            return np.zeros(len(self), dtype=np.int8)
 
         if isinstance(self._chirality, LazyData):
             return self._chirality.read().astype(np.int8)
