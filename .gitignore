@@ -39,3 +39,6 @@ site/
 
 # Local Claude files
 .claude/
+
+# Local coding-agent guidance
+/AGENTS.md
