@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import pickle
 from collections.abc import Sequence
+from contextlib import ExitStack
+from numbers import Integral
 from pathlib import Path
 
 import h5py
@@ -400,9 +402,9 @@ class ComplexBatch(Sequence):
         Args:
             save_path: Directory produced by `save`.
             n_shards: If set, only the first `n_shards` shards are loaded.
-            allow_pickle: Permit loading a shard whose metadata is in the legacy pickled-blob
+            allow_pickle: Permit loading a shard whose metadata or interactions use a legacy pickle
                 format. Off by default because unpickling a file from an untrusted source can
-                execute arbitrary code. Nothing molito writes now contains pickle.
+                execute arbitrary code. New HDF5 shards contain no Python pickle.
         """
 
         save_path = Path(save_path)
@@ -414,12 +416,20 @@ class ComplexBatch(Sequence):
         sorted_paths = list(sorted(shard_paths, key=lambda p: (0, int(p.stem)) if p.stem.isdigit() else (1, p.stem)))
 
         if n_shards is not None:
+            if not isinstance(n_shards, Integral) or n_shards < 0:
+                raise ValueError("n_shards must be a nonnegative integer.")
             n_shards = min(len(sorted_paths), n_shards)
             sorted_paths = sorted_paths[:n_shards]
 
-        shards = [ComplexBatch.load_hdf5_shard(p, allow_pickle=allow_pickle) for p in sorted_paths]
-        batch = ComplexBatch.from_batches(shards)
-        return batch
+        with ExitStack() as stack:
+            shards = []
+            for path in sorted_paths:
+                shard = ComplexBatch.load_hdf5_shard(path, allow_pickle=allow_pickle)
+                stack.callback(shard.close_hdf5)
+                shards.append(shard)
+            batch = ComplexBatch.from_batches(shards)
+            stack.pop_all()
+            return batch
 
     @staticmethod
     def load_hdf5_shard(save_file: str | Path, allow_pickle: bool = False) -> ComplexBatch:
@@ -428,27 +438,30 @@ class ComplexBatch(Sequence):
         if save_file.suffix != ".hdf5":
             raise RuntimeError("Save file must have an hdf5 suffix.")
 
-        hdf5_file = h5py.File(save_file, "r")
-        check_format(hdf5_file, save_file)
+        with ExitStack() as stack:
+            hdf5_file = stack.enter_context(h5py.File(save_file, "r"))
+            check_format(hdf5_file, save_file)
 
-        proteins = ProteinBatch._load_from_group(hdf5_file["proteins"], allow_pickle=allow_pickle)
-        ligands = GraphBatch._load_from_group(hdf5_file["ligands"], allow_pickle=allow_pickle)
-        interaction_sets = InteractionSet.load_from_group(hdf5_file["interactions"])
+            proteins = ProteinBatch._load_from_group(hdf5_file["proteins"], allow_pickle=allow_pickle)
+            ligands = GraphBatch._load_from_group(hdf5_file["ligands"], allow_pickle=allow_pickle)
+            interaction_sets = InteractionSet.load_from_group(hdf5_file["interactions"], allow_pickle=allow_pickle)
 
-        n = len(proteins)
-        if len(ligands) != n or len(interaction_sets) != n:
-            raise RuntimeError(
-                f"Complex shard size mismatch: {n} proteins, {len(ligands)} ligands, "
-                f"{len(interaction_sets)} interaction sets."
-            )
+            n = len(proteins)
+            if len(ligands) != n or len(interaction_sets) != n:
+                raise RuntimeError(
+                    f"Complex shard size mismatch: {n} proteins, {len(ligands)} ligands, "
+                    f"{len(interaction_sets)} interaction sets."
+                )
 
-        complexes = []
-        complex_metas = load_meta(hdf5_file["meta"], n, allow_pickle=allow_pickle)
+            complexes = []
+            complex_metas = load_meta(hdf5_file["meta"], n, allow_pickle=allow_pickle)
 
-        for protein, ligand, ints, meta in zip(proteins, ligands, interaction_sets, complex_metas, strict=True):
-            complexes.append(BindingComplex._load_unchecked(protein, ligand, ints, meta))
+            for protein, ligand, ints, meta in zip(proteins, ligands, interaction_sets, complex_metas, strict=True):
+                complexes.append(BindingComplex._load_unchecked(protein, ligand, ints, meta))
 
-        return ComplexBatch(complexes, hdf5_file=hdf5_file)
+            batch = ComplexBatch(complexes, hdf5_file=hdf5_file)
+            stack.pop_all()
+            return batch
 
     def save(self, save_path: str | Path, shard_size: int | None = None, columnar_meta: bool = False) -> None:
         """Save the batch of data under the directory given by save_path.
@@ -463,6 +476,10 @@ class ComplexBatch(Sequence):
                 shard, which handles nested or ragged metadata that columnar would stringify.
         """
 
+        shard_size = len(self) if shard_size is None else shard_size
+        if len(self) == 0 or not isinstance(shard_size, Integral) or shard_size <= 0:
+            raise ValueError("Saving requires a nonempty batch and a positive integer shard_size.")
+
         save_path = Path(save_path)
 
         if save_path.exists():
@@ -471,7 +488,6 @@ class ComplexBatch(Sequence):
 
         save_path.mkdir(exist_ok=True, parents=True)
 
-        shard_size = len(self) if shard_size is None else shard_size
         complex_shards = [[cx for cx in cxs if cx is not None] for cxs in grouper(self, shard_size)]
 
         for idx, shard in enumerate(complex_shards):

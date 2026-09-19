@@ -6,32 +6,34 @@ from rdkit.Chem import AllChem
 from molito.geometry.common import possibly_add_hs
 
 
-def calc_energy_mmff(mol: Chem.Mol, per_atom: bool = False) -> float | list[float] | None:
-    """Calculate the energy for an RDKit molecule using the MMFF forcefield.
+def calc_energy_mmff(mol: Chem.Mol, per_atom: bool = False) -> float | list[float | None] | None:
+    """Calculate the energy in kcal/mol for an RDKit molecule using the MMFF forcefield.
 
     The molecule is copied so the original is not modified. If multiple conformers exist in the molecule the energies
-    are calculated independently and returned as a list. The conformer ids must be continuous and start from 0.
+    are calculated independently and returned in conformer iteration order. Individual
+    failures are returned as None entries. Conformer IDs need not be contiguous.
 
     Args:
         mol (Chem.Mol): RDKit molecule
         per_atom (bool): Whether to normalise by number of atoms in mol, default False
 
     Returns:
-        float: Energy of the molecule or None if the energy could not be calculated
+        Energy in kcal/mol: a float for one conformer, a list for multiple conformers,
+        or None for failed calculations.
     """
 
     mol_copy = possibly_add_hs(mol)
 
-    if mol_copy is None:
+    if mol_copy is None or mol_copy.GetNumConformers() == 0:
         return None
 
     n_atoms = mol_copy.GetNumAtoms()
 
     energies = []
-    for c_idx in range(mol_copy.GetNumConformers()):
+    for conf in mol_copy.GetConformers():
         try:
             mmff_props = AllChem.MMFFGetMoleculeProperties(mol_copy, mmffVariant="MMFF94")
-            ff = AllChem.MMFFGetMoleculeForceField(mol_copy, mmff_props, confId=c_idx)
+            ff = AllChem.MMFFGetMoleculeForceField(mol_copy, mmff_props, confId=conf.GetId())
             energy = ff.CalcEnergy()
             energy = energy / n_atoms if per_atom else energy
         except Exception:
@@ -49,7 +51,7 @@ def optimise_mol_mmff(
     n_threads: int = 1,
     allow_unconverged: bool = True,
     return_energy: bool = False,
-) -> Chem.rdchem.Mol | tuple[Chem.rdchem.Mol, float | list[float]] | None:
+) -> Chem.rdchem.Mol | tuple[Chem.rdchem.Mol, float | list[float | None] | None] | None:
     """Optimise the conformation of an RDKit molecule using the MMFF forcefield.
 
     The molecule is copied so the original is not modified. If the input molecule contains multiple conformers,
@@ -68,7 +70,7 @@ def optimise_mol_mmff(
 
     Returns:
         The optimised molecule, or None on failure. With return_energy, a tuple of
-        (optimised molecule, energy per conformer) instead - a float for a single
+        (optimised molecule, energy per conformer in kcal/mol) instead - a float for a single
         conformer, a list otherwise.
     """
 
@@ -93,6 +95,8 @@ def optimise_mol_mmff(
         return None
 
     exitcodes, _ = tuple(zip(*out, strict=True))
+    if any(code < 0 for code in exitcodes):
+        return None
     converged = [code == 0 for code in exitcodes]
 
     if not allow_unconverged and not all(converged):
@@ -102,10 +106,10 @@ def optimise_mol_mmff(
     energies = None
     if return_energy:
         energies = []
-        for c_idx in range(opt_mol.GetNumConformers()):
+        for conf in opt_mol.GetConformers():
             try:
                 mmff_props = AllChem.MMFFGetMoleculeProperties(opt_mol, mmffVariant="MMFF94")
-                ff = AllChem.MMFFGetMoleculeForceField(opt_mol, mmff_props, confId=c_idx)
+                ff = AllChem.MMFFGetMoleculeForceField(opt_mol, mmff_props, confId=conf.GetId())
                 energies.append(ff.CalcEnergy())
             except Exception:
                 energies.append(None)

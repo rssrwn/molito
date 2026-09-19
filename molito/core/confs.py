@@ -44,6 +44,8 @@ class ConfSet(Sequence):
 
             if isinstance(weights, np.ndarray):
                 weights = weights.astype(np.float32)
+                if not np.isfinite(weights).all() or (weights < 0).any():
+                    raise ValueError("Conformer weights must be finite and nonnegative.")
                 if np.isclose(weights.sum().item(), 0.0, atol=1e-5):
                     raise RuntimeError("If conformer weights are provided they must not sum to 0")
 
@@ -196,7 +198,7 @@ class ConfSet(Sequence):
 
         indices = np.array(indices)
         coords = self.coords[indices, :, :]
-        weights = self.weights[indices]
+        weights = self.weights[indices] if self.has_weights else None
 
         confs = self.copy_with(coords=coords, weights=weights)
         return confs
@@ -274,7 +276,7 @@ class ConfSet(Sequence):
                 err = "If a list of shifts is provided, the length must match the number of conformers."
                 raise RuntimeError(err)
 
-            shifted = [self._apply_shift(sh, conf) for sh, conf in zip(shift, self._to_list(), strict=True)]
+            shifted = [self._apply_shift(conf, sh) for sh, conf in zip(shift, self._to_list(), strict=True)]
             shifted = np.stack(shifted)
 
         else:
@@ -379,7 +381,7 @@ class ConfSet(Sequence):
             if cs_is_hdf5:
                 confs = LazyData(cs_arr, curr_coord_idx, (n_confs, n_atoms))
             else:
-                confs = cs_arr[curr_coord_idx : curr_coord_idx + (n_confs * n_atoms)]
+                confs = cs_arr[curr_coord_idx : curr_coord_idx + (n_confs * n_atoms)].reshape(n_confs, n_atoms, 3)
 
             if n_ws == 0:
                 weights = None

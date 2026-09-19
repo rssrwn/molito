@@ -74,9 +74,13 @@ def _dedup_conformers(mol, rmsd_threshold=0.5):
 def _calc_weights(energies, temp=300):
     """Energies in kcal/mol"""
 
+    if not np.isfinite(temp) or temp <= 0:
+        raise ValueError("Temperature must be finite and positive.")
     kT = 0.001987 * temp
 
     energies = np.array(energies)
+    if energies.size == 0 or not np.isfinite(energies).all():
+        raise ValueError("Energies must be nonempty and finite.")
     relative_energies = energies - np.min(energies)
 
     boltzmann_factors = np.exp(-relative_energies / kT)
@@ -179,6 +183,9 @@ def sample_ensemble(
 
     from molito.geometry.mmff import calc_energy_mmff
 
+    if not np.isfinite(temp) or temp <= 0 or not np.isfinite(strain_filter) or strain_filter < 0:
+        raise ValueError("Temperature must be positive and strain_filter nonnegative; both must be finite.")
+
     embedded = sample_conformers(
         mol, n_confs=max_confs, max_attempts=max_conf_attempts, opt_iters=max_opt_iters, n_threads=n_threads
     )
@@ -203,11 +210,13 @@ def sample_ensemble(
         emb_dedup.AddConformer(conf, assignId=True)
 
     energies = calc_energy_mmff(emb_dedup)
+    if energies is None:
+        return None
     energies = [energies] if not isinstance(energies, list) else energies
 
     assert len(energies) == len(confs)
 
-    is_valid = [energy is not None for energy in energies]
+    is_valid = [energy is not None and np.isfinite(energy) for energy in energies]
     confs = [conf for valid, conf in zip(is_valid, confs, strict=True) if valid]
     energies = [energy for valid, energy in zip(is_valid, energies, strict=True) if valid]
 

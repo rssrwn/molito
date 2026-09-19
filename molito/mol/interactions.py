@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pickle
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ import h5py
 import numpy as np
 
 from molito.core._checks import PICKLE_PROTOCOL, check_dict_key
+from molito.core.meta import _json_default
 from molito.mol.complex import BindingComplex
 
 TArr = np.ndarray
@@ -344,10 +346,10 @@ class InteractionSet:
 
     # *** Serialization ***
 
-    def to_bytes(self) -> bytes:
-        """Serialize to bytes."""
+    def _to_core_repr(self) -> dict:
+        """Represent interactions with built-in containers for serialization."""
 
-        # Store interactions as a list of dicts for easy unpickling
+        # Store interactions as a list of dicts for serialization
         interaction_data = []
         for i in self._interactions:
             interaction_data.append(
@@ -363,14 +365,21 @@ class InteractionSet:
             "n_protein_atoms": self._n_protein_atoms,
             "n_ligand_atoms": self._n_ligand_atoms,
         }
-        return pickle.dumps(data_dict, protocol=PICKLE_PROTOCOL)
+        return data_dict
+
+    def to_bytes(self) -> bytes:
+        """Serialize to Python pickle bytes; only load from trusted sources."""
+
+        return pickle.dumps(self._to_core_repr(), protocol=PICKLE_PROTOCOL)
 
     @staticmethod
     def from_bytes(data: bytes) -> InteractionSet:
         """Deserialize from bytes."""
 
-        obj = pickle.loads(data)
+        return InteractionSet._from_core_repr(pickle.loads(data))
 
+    @staticmethod
+    def _from_core_repr(obj: dict) -> InteractionSet:
         check_dict_key(obj, "interactions")
         check_dict_key(obj, "n_protein_atoms")
         check_dict_key(obj, "n_ligand_atoms")
@@ -378,8 +387,8 @@ class InteractionSet:
         interactions = []
         for i_data in obj["interactions"]:
             interaction = Interaction(
-                protein_atoms=i_data["protein_atoms"],
-                ligand_atoms=i_data["ligand_atoms"],
+                protein_atoms=tuple(i_data["protein_atoms"]),
+                ligand_atoms=tuple(i_data["ligand_atoms"]),
                 interaction_type=i_data["interaction_type"],
             )
             interactions.append(interaction)
@@ -396,8 +405,9 @@ class InteractionSet:
 
     @staticmethod
     def save_to_group(int_sets: list[InteractionSet | None], group: h5py.Group) -> None:
-        """Save interaction sets to an HDF5 group as serialized bytes."""
+        """Save interaction sets as JSON payloads; no Python pickle is written."""
 
+        group.attrs["format"] = "json"
         # Serialize each InteractionSet to bytes
         serialized = []
         sizes = []
@@ -405,7 +415,7 @@ class InteractionSet:
             if int_set is None:
                 sizes.append(0)
             else:
-                data = int_set.to_bytes()
+                data = json.dumps(int_set._to_core_repr(), default=_json_default).encode("utf-8")
                 serialized.append(data)
                 sizes.append(len(data))
 
@@ -415,11 +425,20 @@ class InteractionSet:
         group.create_dataset("sizes", data=np.array(sizes, dtype=np.int64))
 
     @staticmethod
-    def load_from_group(group: h5py.Group) -> list[InteractionSet | None]:
-        """Load interaction sets from an HDF5 group."""
+    def load_from_group(group: h5py.Group, allow_pickle: bool = False) -> list[InteractionSet | None]:
+        """Load JSON interactions, or explicitly trusted legacy pickle payloads."""
 
         data = np.array(group["data"][()])
         sizes = np.array(group["sizes"][()])
+        if sizes.ndim != 1 or sizes.dtype.kind not in "iu" or (sizes < 0).any() or sizes.sum() != len(data):
+            raise ValueError("Invalid interaction payload sizes.")
+        fmt = group.attrs.get("format", "pickle")
+        if isinstance(fmt, bytes):
+            fmt = fmt.decode("utf-8")
+        if fmt not in ("json", "pickle"):
+            raise ValueError(f"Unknown interaction format {fmt!r}.")
+        if fmt == "pickle" and sizes.any() and not allow_pickle:
+            raise ValueError("Legacy interaction payloads use pickle; pass allow_pickle=True only for trusted files.")
 
         interaction_sets: list[InteractionSet | None] = []
         offset = 0
@@ -428,7 +447,10 @@ class InteractionSet:
                 interaction_sets.append(None)
             else:
                 byte_data = data[offset : offset + size].tobytes()
-                interaction_sets.append(InteractionSet.from_bytes(byte_data))
+                if fmt == "json":
+                    interaction_sets.append(InteractionSet._from_core_repr(json.loads(byte_data)))
+                else:
+                    interaction_sets.append(InteractionSet.from_bytes(byte_data))
                 offset += size
 
         return interaction_sets

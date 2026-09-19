@@ -17,6 +17,7 @@ from molito.core.atoms import AtomSet
 from molito.core.bonds import BondSet
 from molito.core.confs import ConfSet
 from molito.core.format import (
+    ARRAY_FORMAT_VERSION,
     FORMAT_VERSION,
     FORMAT_VERSION_ATTR,
     LEGACY_FORMAT_VERSION,
@@ -69,13 +70,13 @@ class TestStampWritten(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _assert_stamped(self, path: Path):
+    def _assert_stamped(self, path: Path, expected_version: int = ARRAY_FORMAT_VERSION):
         shards = list(path.glob("*.hdf5"))
         self.assertGreater(len(shards), 0)
 
         for shard in shards:
             with h5py.File(shard, "r") as f:
-                self.assertEqual(f.attrs[FORMAT_VERSION_ATTR], FORMAT_VERSION)
+                self.assertEqual(f.attrs[FORMAT_VERSION_ATTR], expected_version)
                 self.assertIn(PACKAGE_VERSION_ATTR, f.attrs)
 
     def test_graph_batch_stamped(self):
@@ -98,7 +99,7 @@ class TestStampWritten(unittest.TestCase):
         path = self.tmp / "complexes"
         complexes = [BindingComplex(_protein(), mol) for mol in _mols(2)]
         ComplexBatch(complexes).save(path)
-        self._assert_stamped(path)
+        self._assert_stamped(path, FORMAT_VERSION)
 
 
 class TestRoundTripWithStamp(unittest.TestCase):

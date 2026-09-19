@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import pickle
 from collections.abc import Sequence
+from contextlib import ExitStack
+from numbers import Integral
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,7 +20,7 @@ from molito.core._checks import PICKLE_PROTOCOL, check_dict_key, check_type
 from molito.core.atoms import AtomSet
 from molito.core.bonds import BondSet
 from molito.core.confs import ConfSet
-from molito.core.format import check_format, stamp_format
+from molito.core.format import ARRAY_FORMAT_VERSION, check_format, stamp_format
 from molito.core.lazydata import LazyData
 from molito.core.meta import column_array, load_meta, save_meta
 
@@ -476,7 +478,8 @@ class GraphBatch(Sequence):
             if isinstance(hdf5_file, h5py.File):
                 open_fps = [hdf5_file]
             elif isinstance(hdf5_file, list):
-                check_type(hdf5_file[0], h5py.File, "hdf5 file list item")
+                if hdf5_file:
+                    check_type(hdf5_file[0], h5py.File, "hdf5 file list item")
                 open_fps = hdf5_file
             else:
                 raise TypeError("hdf5_file must be either an h5py.File or a list of h5py.File objects.")
@@ -515,7 +518,7 @@ class GraphBatch(Sequence):
 
     @property
     def bonds(self) -> TArr:
-        return pad_arrays([mol.bonds for mol in self._mols])
+        return pad_arrays([mol.bonds.bonds for mol in self._mols])
 
     @property
     def bond_indices(self) -> TArr:
@@ -743,7 +746,7 @@ class GraphBatch(Sequence):
                   `molito.core.meta` for details.
             allow_pickle: Permit loading a shard whose metadata is in the legacy pickled-blob
                 format. Off by default because unpickling a file from an untrusted source can
-                execute arbitrary code. Nothing molito writes now contains pickle.
+                execute arbitrary code. New HDF5 shards contain no Python pickle.
         """
 
         save_path = Path(save_path)
@@ -752,18 +755,29 @@ class GraphBatch(Sequence):
             raise RuntimeError(f"The folder was not found at path {save_path!s}")
 
         shard_paths = [path for path in save_path.iterdir() if path.suffix == ".hdf5"]
-        sorted_paths = list(sorted(shard_paths, key=lambda p: int(p.stem)))
+        sorted_paths = list(sorted(shard_paths, key=lambda p: (0, int(p.stem)) if p.stem.isdigit() else (1, p.stem)))
 
         if n_shards is not None:
+            if not isinstance(n_shards, Integral) or n_shards < 0:
+                raise ValueError("n_shards must be a nonnegative integer.")
             sorted_paths = sorted_paths[:n_shards]
 
         if not materialise:
-            files = [h5py.File(p, "r") for p in sorted_paths]
-            return LazyGraphBatch(files, allow_pickle=allow_pickle)
+            with ExitStack() as stack:
+                files = [stack.enter_context(h5py.File(p, "r")) for p in sorted_paths]
+                batch = LazyGraphBatch(files, allow_pickle=allow_pickle)
+                stack.pop_all()
+                return batch
 
-        shards = [GraphBatch.load_hdf5_shard(p, allow_pickle=allow_pickle) for p in sorted_paths]
-        batch = GraphBatch.from_batches(shards)
-        return batch
+        with ExitStack() as stack:
+            shards = []
+            for path in sorted_paths:
+                shard = GraphBatch.load_hdf5_shard(path, allow_pickle=allow_pickle)
+                stack.callback(shard.close_hdf5)
+                shards.append(shard)
+            batch = GraphBatch.from_batches(shards)
+            stack.pop_all()
+            return batch
 
     @staticmethod
     def load_hdf5_shard(save_file: str | Path, allow_pickle: bool = False) -> GraphBatch:
@@ -772,10 +786,13 @@ class GraphBatch(Sequence):
         if save_file.suffix != ".hdf5":
             raise RuntimeError("Save file must have an hdf5 suffix.")
 
-        hdf5_file = h5py.File(save_file, "r")
-        check_format(hdf5_file, save_file)
-        mols = GraphBatch._load_from_group(hdf5_file, allow_pickle=allow_pickle)
-        return GraphBatch(mols, hdf5_file=hdf5_file)
+        with ExitStack() as stack:
+            hdf5_file = stack.enter_context(h5py.File(save_file, "r"))
+            check_format(hdf5_file, save_file)
+            mols = GraphBatch._load_from_group(hdf5_file, allow_pickle=allow_pickle)
+            batch = GraphBatch(mols, hdf5_file=hdf5_file)
+            stack.pop_all()
+            return batch
 
     def _to_core_repr(self) -> list[dict[str, dict[str, TArr]]]:
         dict_list = [mol._to_core_repr() for mol in self._mols]
@@ -799,6 +816,10 @@ class GraphBatch(Sequence):
                 shard, which handles nested or ragged metadata that columnar would stringify.
         """
 
+        shard_size = len(self) if shard_size is None else shard_size
+        if len(self) == 0 or not isinstance(shard_size, Integral) or shard_size <= 0:
+            raise ValueError("Saving requires a nonempty batch and a positive integer shard_size.")
+
         save_path = Path(save_path)
 
         if save_path.exists():
@@ -807,7 +828,6 @@ class GraphBatch(Sequence):
 
         save_path.mkdir(exist_ok=True, parents=True)
 
-        shard_size = len(self) if shard_size is None else shard_size
         mol_shards = [[mol for mol in mols if mol is not None] for mols in grouper(self, shard_size)]
 
         for idx, shard in enumerate(mol_shards):
@@ -825,7 +845,7 @@ class GraphBatch(Sequence):
             raise ValueError(f"save_file must end in .hdf5, got {save_file}")
 
         with h5py.File(hdf5_path, "x") as f:
-            stamp_format(f)
+            stamp_format(f, format_version=ARRAY_FORMAT_VERSION)
             self._save_to_group(f, columnar_meta=columnar_meta)
 
     @staticmethod

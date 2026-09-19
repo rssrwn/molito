@@ -18,6 +18,10 @@ Shards written before versioning was introduced have no attributes at all. Those
 ``LEGACY_FORMAT_VERSION`` (0) and are still readable -- the layout did not change when the
 stamp was added, so the stamp is the only difference.
 
+Version 2 replaces complex interaction pickle payloads with JSON and introduces native
+string/RDKit batches. Graph and protein writers still stamp version 1 because their layouts
+are unchanged. Versions 0 and 1 remain readable, with explicit allow_pickle opt-in for legacy payloads.
+
 A file whose version is *newer* than this package understands is refused outright, since the
 alternative is reading nonsense from datasets that have moved.
 """
@@ -28,7 +32,10 @@ from pathlib import Path
 import h5py
 
 # Bump when a layout change would stop older readers from working. See module docstring.
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+
+# Graph and protein array layouts remain readable by version 1 readers.
+ARRAY_FORMAT_VERSION = 1
 
 # Shards written before the stamp existed carry no attributes.
 LEGACY_FORMAT_VERSION = 0
@@ -44,10 +51,12 @@ def _package_version() -> str:
         return "unknown"
 
 
-def stamp_format(f: h5py.File) -> None:
-    """Write the format and package version attributes onto a newly created shard."""
+def stamp_format(f: h5py.File, format_version: int = FORMAT_VERSION) -> None:
+    """Stamp the minimum reader format required by a newly created shard."""
 
-    f.attrs[FORMAT_VERSION_ATTR] = FORMAT_VERSION
+    if format_version < ARRAY_FORMAT_VERSION or format_version > FORMAT_VERSION:
+        raise ValueError(f"Unsupported writer format version {format_version}.")
+    f.attrs[FORMAT_VERSION_ATTR] = format_version
     f.attrs[PACKAGE_VERSION_ATTR] = _package_version()
 
 
