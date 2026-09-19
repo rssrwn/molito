@@ -1,7 +1,9 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import h5py
 import numpy as np
@@ -13,6 +15,7 @@ from molito.core import AtomSet, BondSet, ConfSet
 from molito.core.vocab import BondVocab
 from molito.geometry.common import _calc_weights
 from molito.geometry.mmff import calc_energy_mmff, optimise_mol_mmff
+from molito.geometry.xtb import _make_xtb_calculator, optimise_mol_xtb
 from molito.mol import ComplexBatch, GraphBatch, Protein, ProteinBatch
 from molito.mol.interactions import Interaction, InteractionSet
 from molito.tokenise import RegexTokeniser
@@ -179,3 +182,41 @@ class TestGeometryRegressions(unittest.TestCase):
         for energies in [[], [np.nan], [np.inf]]:
             with self.subTest(energies=energies), self.assertRaises(ValueError):
                 _calc_weights(np.array(energies), 300)
+
+    def test_xtb_calculator_charge_spin_and_solvent(self):
+        calculator = Mock()
+        solvent_enum = object()
+        modules = {
+            "xtb.interface": SimpleNamespace(Calculator=calculator),
+            "xtb.libxtb": SimpleNamespace(VERBOSITY_MUTED=0),
+            "xtb.utils": SimpleNamespace(get_solvent=Mock(return_value=solvent_enum)),
+        }
+        with (
+            patch.dict(sys.modules, modules),
+            patch("molito.geometry.xtb._get_xtb_method_map", return_value={"test": 1}),
+        ):
+            _make_xtb_calculator([7], np.zeros((1, 3)), "test", 1.0, 300.0, "water", 1, 2)
+            self.assertEqual(calculator.call_args.kwargs, {"charge": 1, "uhf": 2})
+            calculator.return_value.set_solvent.assert_called_once_with(solvent_enum)
+            modules["xtb.utils"].get_solvent.return_value = None
+            with self.assertRaisesRegex(ValueError, "Unknown xTB solvent"):
+                _make_xtb_calculator([7], np.zeros((1, 3)), "test", 1.0, 300.0, "invalid", 1, 2)
+
+    def test_xtb_passes_molecular_charge_and_rejects_failed_optimisation(self):
+        mol = Chem.AddHs(Chem.MolFromSmiles("[NH4+]"))
+        AllChem.EmbedMolecule(mol, randomSeed=42)
+        result = SimpleNamespace(success=False, status=1, x=mol.GetConformer().GetPositions().flatten(), fun=-1.0)
+        with (
+            patch("molito.geometry.xtb._get_xtb_method_map", return_value={"GFN2-xTB": 1}),
+            patch("molito.geometry.xtb._make_xtb_calculator") as factory,
+            patch("molito.geometry.xtb._xtb_energy_and_gradient", return_value=(-1.0, np.zeros(mol.GetNumAtoms() * 3))),
+            patch("scipy.optimize.minimize", return_value=result),
+        ):
+            self.assertIsNone(optimise_mol_xtb(mol, allow_unconverged=False))
+            self.assertEqual(factory.call_args.args[-2:], (1, 0))
+            self.assertIsNotNone(optimise_mol_xtb(mol))
+            result.status = 2
+            self.assertIsNone(optimise_mol_xtb(mol))
+            result.success = True
+            self.assertIsNotNone(optimise_mol_xtb(mol, uhf=2))
+            self.assertEqual(factory.call_args.args[-2:], (1, 2))

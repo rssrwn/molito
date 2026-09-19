@@ -48,7 +48,7 @@ Optional dependencies for specific features:
 pip install "molito[interactions]"   # prolif + MDAnalysis for interaction detection
 ```
 
-`optimise_mol_xtb()` additionally needs xtb-python, which has no working pip wheel and must
+`calc_energy_xtb()` and `optimise_mol_xtb()` additionally need xtb-python, which has no working pip wheel and must
 come from conda-forge:
 
 ```bash

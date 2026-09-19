@@ -16,7 +16,7 @@ The core package requires: numpy, rdkit, scipy, h5py, biotite, more-itertools.
 | `dev` | matplotlib, jupyter, ipykernel, py3Dmol | notebook and visualisation tooling |
 | `docs` | mkdocs-material, mkdocstrings | building this documentation |
 
-`optimise_mol_xtb()` needs xtb-python, which is not available as a working pip wheel and must be
+`calc_energy_xtb()` and `optimise_mol_xtb()` need xtb-python, which is not available as a working pip wheel and must be
 installed from conda-forge:
 
 ```bash

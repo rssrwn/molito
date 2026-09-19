@@ -7,4 +7,4 @@ from .align import (
 )
 from .common import possibly_add_hs, sample_conformers, sample_ensemble
 from .mmff import calc_energy_mmff, optimise_mol_mmff
-from .xtb import optimise_mol_xtb
+from .xtb import calc_energy_xtb, optimise_mol_xtb

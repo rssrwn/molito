@@ -37,7 +37,7 @@ Optional extras, installed as `pip install "molito[interactions]"`:
 | `dev`          | matplotlib, jupyter, ruff, mypy | development tooling |
 | `docs`         | mkdocs-material, mkdocstrings | building the documentation site |
 
-`optimise_mol_xtb()` additionally requires `xtb-python`, which only installs reliably from
+`calc_energy_xtb()` and `optimise_mol_xtb()` additionally require `xtb-python`, which only installs reliably from
 conda-forge:
 
 ```bash
@@ -174,6 +174,20 @@ opt_mol = optimise_mol_mmff(rdkit_mol, max_iters=500)
 # A Boltzmann-weighted ensemble: deduplicated, strain-filtered conformers plus weights
 final_mol, weights, e_min = sample_ensemble(rdkit_mol, max_confs=128)
 ```
+
+With xtb-python installed, single-point energies are available without optimisation:
+
+```python
+from molito.geometry import calc_energy_xtb
+
+energy_kcal = calc_energy_xtb(rdkit_mol, solvent="water")
+energy_hartree = calc_energy_xtb(rdkit_mol, units="hartree")
+```
+
+Both xTB functions default to kcal/mol, matching MMFF; `units="hartree"` selects native xTB units.
+Multiple conformers return a
+list in conformer iteration order, with `None` for failed calculations. `per_atom=True`
+normalises by the total atom count, including hydrogens. The input molecule is unchanged.
 
 ### Proteins and complexes
 

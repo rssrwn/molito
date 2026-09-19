@@ -30,6 +30,26 @@
 
 ## Geometry
 
+`calc_energy_xtb` evaluates each conformer without optimisation. It returns energies in
+**kcal/mol**, matching MMFF and `optimise_mol_xtb`. Both xTB functions accept
+`units="hartree"` for native energies (1 Hartree is approximately 627.509474 kcal/mol). One conformer
+returns a float, multiple conformers return a list in iteration order, and failed conformers
+return `None`. Missing hydrogens get RDKit-generated coordinates without minimisation;
+provide all hydrogens explicitly when evaluating a specific geometry.
+
+```python
+from molito.geometry import calc_energy_xtb
+
+energy = calc_energy_xtb(rdkit_mol)
+solvated_energy = calc_energy_xtb(rdkit_mol, solvent="water")
+native_energy = calc_energy_xtb(rdkit_mol, units="hartree")
+```
+
+The xTB optimiser always runs in native atomic units internally, so selecting output units
+changes neither its geometry nor convergence tolerances. Its final and initial energies use
+the same requested units. Before 0.2.0, it returned Hartree; existing callers that expect
+those values should pass `units="hartree"`. Previously saved energy values are not converted.
+
 ::: molito.geometry.sample_conformers
 
 ::: molito.geometry.sample_ensemble
@@ -37,6 +57,8 @@
 ::: molito.geometry.calc_energy_mmff
 
 ::: molito.geometry.optimise_mol_mmff
+
+::: molito.geometry.calc_energy_xtb
 
 ::: molito.geometry.optimise_mol_xtb
 
