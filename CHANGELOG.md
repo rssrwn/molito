@@ -12,6 +12,57 @@ wrote it, and readers refuse shards from a newer molito rather than misreading t
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-19
+
+### Added
+
+- `calc_energy_xtb` for single-point energies in kcal/mol, including conformer ensembles,
+  per-atom normalisation, solvent and spin settings, with live native-backend tests.
+- `MolRepr`, abstract `StringMol`, `SmilesMol`, and `RDKitMol`, with metadata-preserving
+  `.to(TargetClass)` conversion, optional strict loss checks, and native persistence.
+- Invalid string storage and tokenisation, plus homogeneous string/RDKit `MolBatch`
+  collections with sharded HDF5 storage. Graph batches can convert to other representations.
+- Character and custom-regex tokenisers, a filtered MolBART/Chemformer SMILES vocabulary,
+  lossless character fallback, deterministic vocabulary fitting, explicit custom tokens,
+  `<PAD>`/`<MASK>`/`<BOS>`/`<EOS>`, and versioned JSON tokeniser artifacts.
+
+### Changed
+
+- Both xTB functions return kcal/mol by default, matching MMFF. Use `units="hartree"` to
+  retain native units, including the pre-0.2.0 optimiser behaviour. Both initial and final
+  optimiser energies are converted; optimisation itself still runs in atomic units.
+  Existing stored energies are not modified.
+- Split `molito.core.vocab` into a package; existing imports and graph vocabulary indices
+  remain unchanged. New native HDF5 shards have separate representation/version markers;
+  graph/protein shards retain format 1; complex and native shards use format 2 (see below).
+
+### Fixed
+
+- RDKit-to-graph conversion handles molecules with no bonds, including single atoms and salts.
+- Failed graph sanitisation returns `None` even when conformer weights are present.
+- Per-conformer shifts, unweighted conformer permutation, and NumPy ensemble reconstruction.
+- Padded graph batch bonds, in-memory batch subsets, and protein shard limits that omitted the final shard.
+- Default chirality for older atom datasets, and file handle cleanup when shard loading fails.
+- Validation of chirality lengths, conformer weights, array indices, temperatures and shard sizes.
+- MMFF energies for noncontiguous conformer IDs, rejection of unsupported forcefield parameters,
+  and handling of failed/nonfinite ensemble energies.
+- xTB now receives molecular charge and unpaired electrons, resolves solvent names to the API enum,
+  and rejects failed optimisation. An optional `uhf` argument permits explicit spin selection.
+  Iteration-limited results remain available by default; `allow_unconverged=False` requires convergence.
+- Regex tokenisers accept global inline flags alongside literal extra tokens.
+- Release tags now run the full validation workflow before building and publishing. Wheel smoke
+  tests use isolated imports and check the bundled SMILES vocabularies.
+
+### On-disk format
+
+- **Format version 2** writes complex interactions as JSON. Earlier interaction payloads used
+  pickle even when metadata was JSON or columnar; loading them now requires `allow_pickle=True`.
+- Version 0/1 files remain readable, with explicit opt-in for any legacy pickle payloads.
+  Older molito versions reject new complex/native version 2 shards. Graph/protein writers
+  retain format 1 and remain readable by 0.1.1. Array layouts are unchanged.
+- Public graph/protein/complex `to_bytes`/`from_bytes` APIs continue to use pickle and require
+  trusted inputs. The no-pickle guarantee applies to newly written HDF5 shards.
+
 ## [0.1.1] - 2026-09-13
 
 ### Fixed
@@ -65,8 +116,9 @@ First public release.
   readable — the layout did not change when the stamp was added.
 - Metadata written before the JSON format used Python `pickle`, which executes arbitrary code on
   load. Those shards now require an explicit `allow_pickle=True`. Columnar shards were never
-  affected, and nothing molito writes now contains pickle.
+  affected by the metadata change. Complex interaction payloads remained pickled until 0.2.0.
 
-[Unreleased]: https://github.com/rssrwn/molito/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/rssrwn/molito/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rssrwn/molito/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/rssrwn/molito/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rssrwn/molito/releases/tag/v0.1.0
