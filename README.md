@@ -46,6 +46,25 @@ mamba install -c conda-forge xtb-python
 
 ## Quick Start
 
+### String and RDKit representations
+
+```python
+from molito import GraphMol, RDKitMol, SmilesMol
+from molito.tokenise import RegexTokeniser
+
+mol = SmilesMol("N[C@@H](C)C(=O)O", meta={"id": "alanine"})
+graph = mol.to(GraphMol)
+wrapped = graph.to(RDKitMol)
+
+tokeniser = RegexTokeniser.smiles()  # MolBART-derived core vocabulary + character fallback
+indices = mol.encode(tokeniser)
+assert tokeniser.decode(indices) == mol.text
+```
+
+`SmilesMol` also stores and tokenises invalid strings. Chemical conversion validates them.
+Character tokenisers, custom regexes/tokens, fitted vocabularies, and native batch storage are
+covered in [Representations and tokenisation](docs/representations.md).
+
 ### Reading molecules
 
 ```python

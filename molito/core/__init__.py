@@ -11,4 +11,4 @@ from .presets import (
     SELENIUM_ATOMS,
 )
 from .pt import PT
-from .vocab import AtomVocab, BondVocab, VocabConfig, Vocabulary
+from .vocab import AtomVocab, BondVocab, StringVocab, VocabConfig, Vocabulary

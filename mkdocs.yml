@@ -34,6 +34,7 @@ nav:
   - Getting Started: getting-started.md
   - Tutorial: tutorial.md
   - Concepts: concepts.md
+  - Representations and Tokenisation: representations.md
   - Stereochemistry: stereochemistry.md
   - API Reference:
     - Overview: api/index.md

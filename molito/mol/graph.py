@@ -4,6 +4,7 @@ import copy
 import pickle
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import h5py
 import numpy as np
@@ -21,11 +22,16 @@ from molito.core.format import check_format, stamp_format
 from molito.core.lazydata import LazyData
 from molito.core.meta import column_array, load_meta, save_meta
 
+from .base import MolRepr, TMol
+
+if TYPE_CHECKING:
+    from .batch import MolBatch
+
 # Type aliases
 TArr = np.ndarray
 
 
-class GraphMol:
+class GraphMol(MolRepr):
     """A molecular graph combining atoms, bonds, and optional 3D conformers.
 
     The primary molecule class in molito. Supports RDKit conversion with chirality and E/Z stereo
@@ -421,7 +427,7 @@ class GraphMol:
         )
 
         # Set conformer weights within the mol if they exist
-        if self.confs is not None and self.confs.weights is not None:
+        if rdkit_mol is not None and self.confs is not None and self.confs.weights is not None:
             assert rdkit_mol.GetNumConformers() == self.n_conformers
             for idx, conf in enumerate(rdkit_mol.GetConformers()):
                 conf.SetProp("weight", str(self.confs.weights[idx].item()))
@@ -698,6 +704,13 @@ class GraphBatch(Sequence):
         open_fps = [fp for batch in batches for fp in batch._open_fps]
         batch = GraphBatch(mols, hdf5_file=open_fps)
         return batch
+
+    def to(self, target: type[TMol], strict: bool = False, **kwargs) -> MolBatch[TMol] | GraphBatch:
+        """Convert every molecule to a representation, retaining metadata and order."""
+
+        from .batch import MolBatch
+
+        return MolBatch.convert_mols(self._mols, target, strict=strict, **kwargs)
 
     @staticmethod
     def load(
