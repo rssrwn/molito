@@ -135,7 +135,13 @@ train = loaded.subset(np.where(ids != "")[0])      # builds only the selection
 ```
 
 Molecules from a loaded batch read their arrays from the open file, so they stop working
-once you call `close_hdf5()`. Call `mol.read()` to detach the ones you want to keep.
+once you close the owning batch. Subsets borrow the source files; closing a subset leaves its
+source open. Use a context manager and batch `.read()` to retain a selection in memory:
+
+```python
+with GraphBatch.load("my_dataset/") as loaded:
+    train = loaded.subset([0, 1]).read()
+```
 
 ### Vocabularies for model training
 

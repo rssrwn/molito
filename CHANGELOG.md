@@ -12,6 +12,32 @@ wrote it, and readers refuse shards from a newer molito rather than misreading t
 
 ## [Unreleased]
 
+### Fixed
+
+- Conformer array indexing and `select_topk` retain the selected weights without renormalising.
+  Small positive weights are no longer treated as zero. Random sampling and single-conformer
+  molecule extraction continue to omit ensemble weights.
+- Graph, protein and complex batch subsets and `from_batches` results borrow their source data;
+  closing them no longer closes the source files. Keep source batches open while using these views.
+  Batch `.read()` detaches data into memory, and context managers close owned files on exit.
+- Atom, charge, chirality, residue ID and bond arrays reject fractional, nonfinite or overflowing
+  values before compact integer conversion. Integral floating-point inputs remain accepted.
+  Combined complex bond offsets also reject overflow instead of wrapping to negative indices.
+- xTB optimisation adds all missing hydrogens without requiring MMFF parameters, including
+  partially hydrogenated inputs. Returned molecules preserve the original atoms and explicit Hs.
+  Initial and final energies describe the complete with-Hs calculation; initial energies and
+  optimisation paths may differ from 0.2.0 because the MMFF preparation step is removed.
+- Conformer alignment and RMSD deduplication accept noncontiguous RDKit conformer IDs.
+- Array padding promotes mixed dtypes instead of truncating values and rejects mismatched
+  trailing shapes instead of broadcasting. Matching input dtypes remain unchanged.
+- Adjacency construction rejects negative/out-of-range endpoints and mismatched edge arrays.
+
+### On-disk format
+
+- No changes to HDF5 layouts, format versions, storage dtypes, bond encodings or vocabulary indices.
+  Existing datasets remain readable and are not rewritten. Previously overflowed values cannot
+  be recovered by upgrading; regenerate affected data from the original inputs.
+
 ## [0.2.0] - 2026-09-19
 
 ### Added
