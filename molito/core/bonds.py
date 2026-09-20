@@ -71,7 +71,7 @@ from biotite.structure import BondList
 from rdkit import Chem
 
 from molito.arrays import adj_from_edges
-from molito.core._checks import check_dict_key, check_dim_shape, check_shape_len, check_type
+from molito.core._checks import cast_integer_array, check_dict_key, check_dim_shape, check_shape_len, check_type
 from molito.core.lazydata import LazyData
 
 TArr = np.ndarray
@@ -221,7 +221,7 @@ class BondSet(Sequence):
         check_dim_shape(bonds, 1, 3, "bonds")
 
         if isinstance(bonds, np.ndarray):
-            bonds = bonds.astype(np.int16)
+            bonds = cast_integer_array(bonds, np.int16, "bonds")
 
         self._bonds = bonds
 
@@ -497,7 +497,7 @@ class BondSet(Sequence):
             bond_index = BondEncoding.encode(bond_type, is_arom, direction=direction)
             bond_list.append([bond_start, bond_end, bond_index])
 
-        bonds = BondSet(np.array(bond_list, dtype=np.int16).reshape(-1, 3))
+        bonds = BondSet(np.array(bond_list).reshape(-1, 3))
         return bonds
 
     @staticmethod
@@ -541,7 +541,7 @@ class BondSet(Sequence):
             bond_index = BondEncoding.encode(rdkit_type, is_aromatic)
             converted_bonds.append([start, end, bond_index])
 
-        return BondSet(np.array(converted_bonds, dtype=np.int16))
+        return BondSet(np.array(converted_bonds))
 
     @staticmethod
     def from_dict(dict_repr) -> BondSet:

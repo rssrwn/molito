@@ -12,7 +12,7 @@ import numpy as np
 from more_itertools import grouper
 
 from molito.arrays import adj_from_edges, pad_arrays
-from molito.core._checks import PICKLE_PROTOCOL, check_dict_key, check_type
+from molito.core._checks import PICKLE_PROTOCOL, cast_integer_array, check_dict_key, check_type
 from molito.core.format import check_format, stamp_format
 from molito.core.meta import load_meta, save_meta
 from molito.mol.graph import GraphBatch, GraphMol
@@ -109,10 +109,11 @@ class BindingComplex:
         """Returns concatenation of ligand and protein bonds with indices adjusted."""
 
         # Shift the protein bond indices to account for ligand atoms coming first
-        protein_bonds = self.protein.bonds.bonds.copy()
+        protein_bonds = self.protein.bonds.bonds.astype(np.int64)
         protein_bonds[:, :2] += len(self.ligand)
 
-        return np.concatenate((self.ligand.bonds.bonds, protein_bonds), axis=0)
+        bonds = np.concatenate((self.ligand.bonds.bonds, protein_bonds), axis=0)
+        return cast_integer_array(bonds, np.int16, "Combined complex bonds")
 
     @property
     def bond_indices(self) -> TArr:
@@ -369,8 +370,13 @@ class ComplexBatch(Sequence):
         return self._complexes[index]
 
     def subset(self, idxs: list[int]) -> ComplexBatch:
+        """Return a borrowed view. Keep the source open, or call .read() to detach it.
+
+        Closing this view does not close the source batch's files.
+        """
+
         subset_complexes = [self._complexes[idx] for idx in idxs]
-        batch = ComplexBatch(subset_complexes, self._open_fps)
+        batch = ComplexBatch(subset_complexes)
         return batch
 
     # *** IO and conversion utility functions ***
@@ -386,11 +392,10 @@ class ComplexBatch(Sequence):
 
     @staticmethod
     def from_batches(batches: list[ComplexBatch]) -> ComplexBatch:
-        """Accumulate a list of ComplexBatch objects into one batch."""
+        """Combine borrowed views; source batches must stay open until the result is read()."""
 
         complexes = [cx for batch in batches for cx in batch]
-        open_fps = [fp for batch in batches for fp in batch._open_fps]
-        batch = ComplexBatch(complexes, hdf5_file=open_fps)
+        batch = ComplexBatch(complexes)
         return batch
 
     @staticmethod
@@ -428,6 +433,7 @@ class ComplexBatch(Sequence):
                 stack.callback(shard.close_hdf5)
                 shards.append(shard)
             batch = ComplexBatch.from_batches(shards)
+            batch._open_fps = [fp for shard in shards for fp in shard._open_fps]
             stack.pop_all()
             return batch
 
@@ -518,12 +524,27 @@ class ComplexBatch(Sequence):
             InteractionSet.save_to_group(interactions, f.create_group("interactions"))
             save_meta(f, complex_metas, columnar=columnar_meta)
 
-    def close_hdf5(self) -> None:
-        """Closes any HDF5 files associated with this batch."""
+    def read(self) -> ComplexBatch:
+        """Return an in-memory batch that can be used after the source files close."""
 
-        if self._open_fps is not None:
-            for fp in self._open_fps:
-                fp.close() if fp is not None else None
+        return ComplexBatch([cx.copy() for cx in self._complexes])
+
+    def __enter__(self) -> ComplexBatch:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close_hdf5()
+
+    def close_hdf5(self) -> None:
+        """Close files owned by this batch. Borrowed subsets and combinations own no files.
+
+        Closing an owning batch also ends reads through its borrowed views. Call read()
+        before closing the owner to keep an independent in-memory batch.
+        """
+
+        for fp in self._open_fps:
+            if fp is not None:
+                fp.close()
 
 
 # Import at end to avoid circular import issues

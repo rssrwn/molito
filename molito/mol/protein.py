@@ -458,9 +458,13 @@ class ProteinBatch(Sequence):
         return self._proteins[index]
 
     def subset(self, idxs: list[int]) -> ProteinBatch:
-        # Take all fps since we currently don't have a way of knowing which correspond to subset
+        """Return a borrowed view. Keep the source open, or call .read() to detach it.
+
+        Closing this view does not close the source batch's files.
+        """
+
         subset_proteins = [self._proteins[idx] for idx in idxs]
-        batch = ProteinBatch(subset_proteins, self._open_fps)
+        batch = ProteinBatch(subset_proteins)
         return batch
 
     # *** IO and conversion utility functions ***
@@ -477,11 +481,10 @@ class ProteinBatch(Sequence):
 
     @staticmethod
     def from_batches(batches: list[ProteinBatch]) -> ProteinBatch:
-        """Accumulate a list of ProteinBatch objects into one batch"""
+        """Combine borrowed views; source batches must stay open until the result is read()."""
 
         proteins = [protein for batch in batches for protein in batch]
-        open_fps = [fp for batch in batches for fp in batch._open_fps]
-        batch = ProteinBatch(proteins, hdf5_file=open_fps)
+        batch = ProteinBatch(proteins)
         return batch
 
     @staticmethod
@@ -518,6 +521,7 @@ class ProteinBatch(Sequence):
                 stack.callback(shard.close_hdf5)
                 shards.append(shard)
             batch = ProteinBatch.from_batches(shards)
+            batch._open_fps = [fp for shard in shards for fp in shard._open_fps]
             stack.pop_all()
             return batch
 
@@ -647,17 +651,24 @@ class ProteinBatch(Sequence):
         metas = [dict(protein.meta) if protein.meta is not None else {} for protein in self._proteins]
         save_meta(group, metas, columnar=columnar_meta)
 
+    def read(self) -> ProteinBatch:
+        """Return an in-memory batch that can be used after the source files close."""
+
+        return ProteinBatch([protein.read() for protein in self._proteins])
+
+    def __enter__(self) -> ProteinBatch:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close_hdf5()
+
     def close_hdf5(self) -> None:
-        """Closes any HDF5 file associated with this batch.
+        """Close files owned by this batch. Borrowed subsets and combinations own no files.
 
-        If the batch was read from an HDF5 file this will close the underlying file, stopping any further reads. If the
-        batch did not originate from HDF5 data this function does not do anything.
-
-        NOTE even if the proteins in the batch have been transferred to a different ProteinBatch object this will stop
-        reads from any data within the HDF5 file, so only close the file if you are sure the data will not be read.
+        Closing an owning batch also ends reads through its borrowed views. Call read()
+        before closing the owner to keep an independent in-memory batch.
         """
 
-        # Close the files but don't set them to None, then we can open them again if needed
-        if self._open_fps is not None:
-            for fp in self._open_fps:
-                fp.close() if fp is not None else None
+        for fp in self._open_fps:
+            if fp is not None:
+                fp.close()

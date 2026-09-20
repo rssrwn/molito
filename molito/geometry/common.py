@@ -50,13 +50,13 @@ def possibly_add_hs(mol: Chem.Mol, max_iters: int = 100) -> Chem.Mol | None:
 def _dedup_conformers(mol, rmsd_threshold=0.5):
     mol_copy = Chem.Mol(mol)
 
-    n_confs = mol_copy.GetNumConformers()
-    if n_confs <= 1:
-        return list(range(n_confs))
+    conf_ids = [conf.GetId() for conf in mol_copy.GetConformers()]
+    if len(conf_ids) <= 1:
+        return conf_ids
 
-    curr_indices = [0]
+    curr_indices = [conf_ids[0]]
 
-    for i in range(1, n_confs):
+    for i in conf_ids[1:]:
         is_unique = True
 
         for j in curr_indices:
@@ -196,7 +196,7 @@ def sample_ensemble(
     if dedup_rmsd_threshold not in [None, 0.0]:
         conf_indices = _dedup_conformers(embedded, rmsd_threshold=dedup_rmsd_threshold)
     else:
-        conf_indices = list(range(embedded.GetNumConformers()))
+        conf_indices = [conf.GetId() for conf in embedded.GetConformers()]
 
     confs = [embedded.GetConformer(idx) for idx in conf_indices]
 

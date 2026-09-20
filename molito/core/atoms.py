@@ -7,7 +7,7 @@ import numpy as np
 from biotite.structure import AtomArray
 from rdkit import Chem
 
-from molito.core._checks import check_dict_key, check_shape_len, check_shapes_equal, check_type
+from molito.core._checks import cast_integer_array, check_dict_key, check_shape_len, check_shapes_equal, check_type
 from molito.core.lazydata import LazyData
 from molito.core.pt import PT
 from molito.core.vocab import CHIRAL_NONE, CHIRAL_SUFFIXES, RDKIT_CHIRAL_TO_INT
@@ -114,12 +114,14 @@ class AtomSet(Sequence):
             _check_string_lengths(chain_ids, MAX_CHAIN_ID_LEN, "chain_ids")
 
         # Cast to compact dtypes if data is already in memory
-        atomics = atomics.astype(np.uint8) if isinstance(atomics, np.ndarray) else atomics
-        charges = charges.astype(np.int8) if isinstance(charges, np.ndarray) else charges
-        chirality = chirality.astype(np.int8) if isinstance(chirality, np.ndarray) else chirality
+        atomics = cast_integer_array(atomics, np.uint8, "atomics") if isinstance(atomics, np.ndarray) else atomics
+        charges = cast_integer_array(charges, np.int8, "charges") if isinstance(charges, np.ndarray) else charges
+        chirality = (
+            cast_integer_array(chirality, np.int8, "chirality") if isinstance(chirality, np.ndarray) else chirality
+        )
 
         if res_ids is not None and isinstance(res_ids, np.ndarray):
-            res_ids = res_ids.astype(np.int32)
+            res_ids = cast_integer_array(res_ids, np.int32, "res_ids")
 
         self._atomics = atomics
         self._charges = charges
@@ -484,9 +486,9 @@ class AtomSet(Sequence):
             tag = atom.GetChiralTag()
             chirals.append(RDKIT_CHIRAL_TO_INT.get(tag, CHIRAL_NONE))
 
-        atomics = np.array(atomics, dtype=np.uint8)
-        charges = np.array(charges, dtype=np.int8)
-        chirality = np.array(chirals, dtype=np.int8)
+        atomics = np.array(atomics)
+        charges = np.array(charges)
+        chirality = np.array(chirals)
 
         atoms = AtomSet(atomics, charges=charges, chirality=chirality)
         return atoms
@@ -501,7 +503,7 @@ class AtomSet(Sequence):
 
         charges = np.zeros(len(atomics), dtype=np.int8)
         if "charge" in atom_array.get_annotation_categories():
-            charges = atom_array.charge.astype(np.int8)
+            charges = atom_array.charge
 
         res_names = atom_array.res_name
         atom_names = atom_array.atom_name

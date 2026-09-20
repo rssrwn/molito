@@ -563,8 +563,13 @@ class GraphBatch(Sequence):
         return self._mols[index]
 
     def subset(self, idxs: list[int]) -> GraphBatch:
+        """Return a borrowed view. Keep the source open, or call .read() to detach it.
+
+        Closing this view does not close the source batch's files.
+        """
+
         subset_mols = [self._mols[idx] for idx in idxs]
-        batch = GraphBatch(subset_mols, self._open_fps)
+        batch = GraphBatch(subset_mols)
         return batch
 
     def meta_column(self, key: str) -> TArr:
@@ -701,11 +706,10 @@ class GraphBatch(Sequence):
 
     @staticmethod
     def from_batches(batches: list[GraphBatch]) -> GraphBatch:
-        """Accumulate a list of GraphBatch objects into one batch."""
+        """Combine borrowed views; source batches must stay open until the result is read()."""
 
         mols = [mol for batch in batches for mol in batch]
-        open_fps = [fp for batch in batches for fp in batch._open_fps]
-        batch = GraphBatch(mols, hdf5_file=open_fps)
+        batch = GraphBatch(mols)
         return batch
 
     def to(self, target: type[TMol], strict: bool = False, **kwargs) -> MolBatch[TMol] | GraphBatch:
@@ -776,6 +780,7 @@ class GraphBatch(Sequence):
                 stack.callback(shard.close_hdf5)
                 shards.append(shard)
             batch = GraphBatch.from_batches(shards)
+            batch._open_fps = [fp for shard in shards for fp in shard._open_fps]
             stack.pop_all()
             return batch
 
@@ -909,10 +914,27 @@ class GraphBatch(Sequence):
         metas = [dict(mol.meta) if mol.meta is not None else {} for mol in self._mols]
         save_meta(group, metas, columnar=columnar_meta)
 
+    def read(self) -> GraphBatch:
+        """Return an in-memory batch that can be used after the source files close."""
+
+        return GraphBatch([mol.read() for mol in self._mols])
+
+    def __enter__(self) -> GraphBatch:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close_hdf5()
+
     def close_hdf5(self) -> None:
-        if self._open_fps is not None:
-            for fp in self._open_fps:
-                fp.close() if fp is not None else None
+        """Close files owned by this batch. Borrowed subsets and combinations own no files.
+
+        Closing an owning batch also ends reads through its borrowed views. Call read()
+        before closing the owner to keep an independent in-memory batch.
+        """
+
+        for fp in self._open_fps:
+            if fp is not None:
+                fp.close()
 
 
 # ***************************************************************

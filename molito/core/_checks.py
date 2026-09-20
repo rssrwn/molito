@@ -1,3 +1,5 @@
+import numpy as np
+
 # **************************
 # ***** Util functions *****
 # **************************
@@ -14,6 +16,24 @@ def check_type(obj, allowed_types, name="object"):
     if not any(is_type):
         type_str = " or ".join([str(t) for t in allowed_types])
         raise TypeError(f"{name} must be an instance of {type_str} or one of their subclasses, got {type(obj)}")
+
+
+def cast_integer_array(arr: np.ndarray, dtype, name: str) -> np.ndarray:
+    """Cast to a storage dtype without silently truncating or overflowing values."""
+
+    if arr.dtype.kind not in "biuf":
+        raise ValueError(f"{name} must contain finite integer values.")
+
+    if arr.dtype.kind == "f" and (not np.isfinite(arr).all() or np.any(arr != np.floor(arr))):
+        raise ValueError(f"{name} must contain finite integer values.")
+
+    bounds = np.iinfo(dtype)
+    # Compare scalar values so float16/32 do not round an integer upper bound upward
+    # (e.g. int32 max becomes 2**31 in float32 and would incorrectly pass an array comparison).
+    if arr.size and (arr.min().item() < bounds.min or arr.max().item() > bounds.max):
+        raise ValueError(f"{name} must fit {np.dtype(dtype).name} storage ({bounds.min} to {bounds.max}).")
+
+    return arr.astype(dtype)
 
 
 def check_dict_key(map, key, dict_name="dictionary"):
