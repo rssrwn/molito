@@ -4,8 +4,6 @@ import numpy as np
 from rdkit import Chem
 from scipy.constants import Avogadro, calorie, physical_constants
 
-from molito.geometry.common import possibly_add_hs
-
 BOHR_PER_ANGSTROM = 1.8897259886
 KCAL_MOL_PER_HARTREE = physical_constants["Hartree energy"][0] * Avogadro / (1000 * calorie)
 
@@ -198,8 +196,9 @@ def optimise_mol_xtb(
     """Optimise a conformer using the xTB semi-empirical method and return the minimised mol and energy.
 
     Uses xtb-python for energy/gradient evaluation and scipy L-BFGS-B for geometry optimisation.
-    The molecule is copied so the original is not modified. Hs are added if not already present since xTB
-    requires all atoms. The returned molecule will have the same H-atom status as the input.
+    The molecule is copied and all missing Hs are added with RDKit-generated coordinates, without MMFF
+    preparation. The returned molecule retains exactly the input atoms, including any explicit Hs;
+    only hydrogens added for the calculation are omitted. Energies refer to the full with-Hs geometry.
 
     Requires xtb-python (conda-forge only): `mamba install -c conda-forge xtb-python`.
 
@@ -233,17 +232,17 @@ def optimise_mol_xtb(
     if method not in _XTB_METHOD_MAP:
         raise ValueError(f"Unknown xTB method '{method}', must be one of {list(_XTB_METHOD_MAP.keys())}")
 
-    mol_copy = Chem.Mol(mol)
+    if uhf is not None and (not isinstance(uhf, int) or uhf < 0):
+        raise ValueError("uhf must be a nonnegative integer.")
 
     try:
+        mol_copy = Chem.Mol(mol)
         Chem.SanitizeMol(mol_copy)
+        mol_copy = Chem.AddHs(mol_copy, addCoords=True)
     except Exception:
         return None
 
-    contains_hs = mol_copy.GetNumAtoms() != mol_copy.GetNumHeavyAtoms()
-    mol_copy = possibly_add_hs(mol_copy, max_iters=50) if not contains_hs else mol_copy
-
-    if mol_copy is None:
+    if mol_copy.GetNumAtoms() == 0:
         return None
 
     try:
@@ -254,8 +253,6 @@ def optimise_mol_xtb(
     n_atoms = len(atomics)
     charge = Chem.GetFormalCharge(mol_copy)
     uhf = sum(atom.GetNumRadicalElectrons() for atom in mol_copy.GetAtoms()) if uhf is None else uhf
-    if not isinstance(uhf, int) or uhf < 0:
-        raise ValueError("uhf must be a nonnegative integer.")
 
     positions_bohr = positions * BOHR_PER_ANGSTROM
     if not _check_positions(positions_bohr):
@@ -296,6 +293,7 @@ def optimise_mol_xtb(
         return None
 
     opt_positions = result.x.reshape(n_atoms, 3) / BOHR_PER_ANGSTROM
-    opt_mol = _set_conf_positions(mol_copy, opt_positions)
-    opt_mol = opt_mol if contains_hs else Chem.RemoveAllHs(opt_mol)
+    # AddHs appends atoms, so the input atom order and explicit-H state can be retained
+    # without removing any original hydrogens, isotope labels or atom properties.
+    opt_mol = _set_conf_positions(mol, opt_positions[: mol.GetNumAtoms()])
     return opt_mol, result.fun * energy_factor, initial_energy * energy_factor

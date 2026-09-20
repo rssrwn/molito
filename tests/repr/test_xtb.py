@@ -110,6 +110,37 @@ class TestXTBIntegration(unittest.TestCase):
         self.assertEqual(result[0].GetNumAtoms(), mol.GetNumAtoms())
         self.assertIsNone(optimise_mol_xtb(mol, conf_idx=999))
 
+    def test_implicit_hydrogens_do_not_require_mmff_parameters(self):
+        mol = Chem.RemoveHs(self._molecule("B"))
+        original = mol.GetConformer().GetPositions().copy()
+        self.assertFalse(AllChem.MMFFHasAllMoleculeParams(Chem.AddHs(mol)))
+        result = optimise_mol_xtb(mol, allow_unconverged=False)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0].GetNumAtoms(), mol.GetNumAtoms())
+        self.assertAlmostEqual(result[2], calc_energy_xtb(mol), places=7)
+        self.assertLessEqual(result[1], result[2] + 1e-8)
+        np.testing.assert_array_equal(mol.GetConformer().GetPositions(), original)
+
+    def test_partly_explicit_hydrogens_are_completed_and_original_atoms_retained(self):
+        mol = Chem.RemoveHs(self._molecule("[2H]OC"))
+        mol.GetAtomWithIdx(0).SetProp("label", "original isotope")
+        self.assertGreater(mol.GetNumAtoms(), mol.GetNumHeavyAtoms())
+        prepared = Chem.AddHs(mol, addCoords=True)
+        self.assertGreater(prepared.GetNumAtoms(), mol.GetNumAtoms())
+        result = optimise_mol_xtb(mol, allow_unconverged=False)
+        reference = optimise_mol_xtb(prepared, allow_unconverged=False)
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(reference)
+        np.testing.assert_allclose(result[1:], reference[1:], atol=1e-7, rtol=0)
+        np.testing.assert_allclose(
+            result[0].GetConformer().GetPositions(),
+            reference[0].GetConformer().GetPositions()[: mol.GetNumAtoms()],
+            atol=1e-7,
+            rtol=0,
+        )
+        self.assertEqual(Chem.MolToSmiles(result[0]), Chem.MolToSmiles(mol))
+        self.assertEqual(result[0].GetAtomWithIdx(0).GetProp("label"), "original isotope")
+
     def test_invalid_solvent_fails_without_gas_phase_fallback(self):
         self.assertIsNone(optimise_mol_xtb(self._molecule("O"), solvent="not-a-solvent"))
         self.assertIsNone(calc_energy_xtb(self._molecule("O"), solvent="not-a-solvent"))
