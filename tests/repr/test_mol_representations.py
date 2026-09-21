@@ -158,6 +158,21 @@ class TestMoleculeRepresentations(unittest.TestCase):
 
 
 class TestNativePersistence(unittest.TestCase):
+    def test_failed_serialisation_does_not_create_or_overwrite_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for mol in [SmilesMol("C"), RDKitMol.from_smiles("C")]:
+                path = Path(directory) / type(mol).__name__
+                mol.meta = {"unsupported": object()}
+                with self.assertRaises(TypeError):
+                    mol.save(path)
+
+                self.assertFalse(path.exists())
+                path.write_bytes(b"existing data")
+                with self.assertRaises((TypeError, FileExistsError)):
+                    mol.save(path)
+
+                self.assertEqual(path.read_bytes(), b"existing data")
+
     def assert_rich_mol(self, mol):
         raw = mol.rdkit_mol
         self.assertEqual(raw.GetProp("source"), "example")

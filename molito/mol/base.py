@@ -35,7 +35,10 @@ class MolRepr(ABC):
 
     @abstractmethod
     def to_rdkit(self, sanitise: bool = False) -> Chem.rdchem.Mol | None:
-        """Return an independent RDKit molecule, or None when it cannot be built."""
+        """Return an independent RDKit molecule, or None for invalid chemistry.
+
+        Errors reading lazy data propagate to the caller.
+        """
 
     @abstractmethod
     def copy(self) -> Self:
@@ -153,10 +156,14 @@ class MolRepr(ABC):
         return text
 
     def save(self, path: str | Path) -> None:
-        """Save native bytes to a new file. Existing files are never overwritten."""
+        """Save native bytes to a new file. Existing files are never overwritten.
 
+        Serialisation finishes before the destination file is created.
+        """
+
+        data = self.to_bytes()
         with Path(path).open("xb") as stream:
-            stream.write(self.to_bytes())
+            stream.write(data)
 
     @classmethod
     def load(cls, path: str | Path) -> Self:
