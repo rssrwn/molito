@@ -71,6 +71,9 @@ class LazyData:
         return self.shape[0]
 
     def read(self) -> TArr:
+        if not self._arr.id.valid:
+            raise RuntimeError("Cannot read from a closed HDF5 file; call read() before closing the owning batch.")
+
         end_idx = self._start_idx + self._n_items
         data = self._arr[self._start_idx : end_idx]
         return np.array(data).reshape(self.shape)

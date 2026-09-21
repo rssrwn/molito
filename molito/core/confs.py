@@ -46,7 +46,8 @@ class ConfSet(Sequence):
                 weights = weights.astype(np.float32)
                 if not np.isfinite(weights).all() or (weights < 0).any():
                     raise ValueError("Conformer weights must be finite and nonnegative.")
-                if np.isclose(weights.sum().item(), 0.0, atol=1e-5):
+
+                if not np.any(weights > 0):
                     raise RuntimeError("If conformer weights are provided they must not sum to 0")
 
         self._coords = coords
@@ -141,7 +142,8 @@ class ConfSet(Sequence):
 
         if isinstance(index, np.ndarray):
             confs = self.coords[index].copy()
-            confs = ConfSet(confs)
+            weights = self.weights[index] if self.has_weights else None
+            confs = ConfSet(confs, weights=weights)
             return confs
 
         raise TypeError("index must be either an int or an np array.")
@@ -222,12 +224,11 @@ class ConfSet(Sequence):
         if not self.has_weights:
             raise RuntimeError("ConfSet must have weights to select top conformers.")
 
-        if k > self.n_conformers:
-            raise ValueError("k cannot be greater than the number of conformers.")
+        if not isinstance(k, (int, np.integer)) or k < 1 or k > self.n_conformers:
+            raise ValueError("k must be a positive integer no greater than the number of conformers.")
 
-        indices = np.argsort(self.weights)[::-1][:k].tolist()
-        confs = np.stack([self.get_conformer(idx) for idx in indices])
-        return ConfSet(confs)
+        indices = np.argsort(self.weights)[::-1][:k]
+        return self.permute_confs(indices)
 
     def pad(self, n_atoms: int) -> ConfSet:
         """Pad the atoms to length n_atoms with zero coords for 'pad' atoms"""

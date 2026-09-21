@@ -111,7 +111,7 @@ def align_conf(mol, ref_mol, align_weight=0.5, ref_profile=None):
         (Chem.Mol, float, float): Tuple of (aligned mol, shape tanimoto, colour tanimoto)
     """
 
-    if align_weight < 0.0 or align_weight > 1.0:
+    if not 0.0 <= align_weight <= 1.0:
         raise ValueError("align_weight must be between 0.0 and 1.0")
 
     mol_copy = Chem.Mol(mol)
@@ -147,13 +147,13 @@ def align_best_conf(mol, ref_mol, align_weight=0.5, ref_profile=None):
             3. Colour tanimoto similarity
     """
 
-    if align_weight < 0.0 or align_weight > 1.0:
+    if not 0.0 <= align_weight <= 1.0:
         raise ValueError("align_weight must be between 0.0 and 1.0")
 
     mol_copy = Chem.Mol(mol)
     ref_copy = Chem.Mol(ref_mol)
-    n_confs = mol_copy.GetNumConformers()
-    assert n_confs >= 1
+    if mol_copy.GetNumConformers() == 0:
+        raise ValueError("Alignment requires at least one conformer.")
 
     if ref_profile is not None:
         ref_copy = set_pharm_features_from_profile(ref_copy, ref_profile)
@@ -161,19 +161,20 @@ def align_best_conf(mol, ref_mol, align_weight=0.5, ref_profile=None):
 
     best_idx = None
     best_score = None
-    all_scores = []
+    best_scores = None
 
-    for c_idx in range(n_confs):
+    for conf in mol_copy.GetConformers():
+        c_idx = conf.GetId()
         # useColors=True so we get a colour score regardless of align_weight
         scores = rdShapeAlign.AlignMol(ref_copy, mol_copy, probeConfId=c_idx, opt_param=align_weight, useColors=True)
-        all_scores.append(scores)
 
         score = (scores[0] * align_weight) + ((1 - align_weight) * scores[1])
         if best_idx is None or score > best_score:
             best_idx = c_idx
             best_score = score
+            best_scores = scores
 
-    shape_tani, colour_tani = all_scores[best_idx]
+    shape_tani, colour_tani = best_scores
 
     # Extract the best conformer (already aligned in-place by AlignMol)
     best_conf = Chem.Conformer(mol_copy.GetConformer(best_idx))

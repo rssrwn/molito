@@ -50,6 +50,12 @@ changes neither its geometry nor convergence tolerances. Its final and initial e
 the same requested units. Before 0.2.0, it returned Hartree; existing callers that expect
 those values should pass `units="hartree"`. Previously saved energy values are not converted.
 
+Since 0.2.1, optimisation also adds every missing hydrogen without MMFF preparation. This permits
+xTB-supported molecules lacking MMFF parameters and inputs with only some hydrogens explicit.
+The returned molecule retains exactly the input atoms; energies refer to the full with-Hs
+geometry used for the calculation. Supply all hydrogens explicitly if you need to retain that
+complete optimised geometry or reproduce its final energy with another single-point call.
+
 ::: molito.geometry.sample_conformers
 
 ::: molito.geometry.sample_ensemble

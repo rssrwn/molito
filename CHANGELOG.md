@@ -10,7 +10,53 @@ Changes to the **on-disk HDF5 layout** are called out explicitly, since those af
 already have rather than just code you can update. Every shard records the format version that
 wrote it, and readers refuse shards from a newer molito rather than misreading them.
 
-## [Unreleased]
+## [0.2.1] - 2026-09-21
+
+### Added
+
+- `validate(connected=True)` optionally requires exactly one connected component across
+  SMILES, RDKit and graph representations. Empty molecules fail this check; the default
+  continues to allow disconnected molecules, including salts and mixtures.
+
+### Changed
+
+- Native `MolBatch.load` and `load_hdf5_shard` keep string/RDKit payloads on disk until accessed.
+  `materialise=False` also defers molecule wrapper construction, returning fresh wrappers on
+  each lookup. The default constructs wrappers immediately; both modes read payloads lazily.
+- Native batch files now stay open until `close_hdf5()` or context-manager exit. Subsets borrow
+  source files; batch and molecule `.read()` detach independent in-memory copies. Loaded metadata
+  is read-only, matching graph batches. RDKit objects are decoded once per wrapper and cached
+  to retain local mutations. Offsets and JSON metadata remain eager; columnar values are lazy.
+
+### Fixed
+
+- SMILES parsing no longer reports unreadable lazy payloads as invalid chemistry. Closed
+  HDF5 reads report a clear error, and empty columnar metadata is read-only like other metadata.
+- Single-molecule saves serialise before creating the destination, so serialisation failures
+  no longer leave empty files. Existing files are still never overwritten.
+- Conformer array indexing and `select_topk` retain the selected weights without renormalising.
+  Small positive weights are no longer treated as zero. Random sampling and single-conformer
+  molecule extraction continue to omit ensemble weights.
+- Graph, protein and complex batch subsets and `from_batches` results borrow their source data;
+  closing them no longer closes the source files. Keep source batches open while using these views.
+  Batch `.read()` detaches data into memory, and context managers close owned files on exit.
+- Atom, charge, chirality, residue ID and bond arrays reject fractional, nonfinite or overflowing
+  values before compact integer conversion. Integral floating-point inputs remain accepted.
+  Combined complex bond offsets also reject overflow instead of wrapping to negative indices.
+- xTB optimisation adds all missing hydrogens without requiring MMFF parameters, including
+  partially hydrogenated inputs. Returned molecules preserve the original atoms and explicit Hs.
+  Initial and final energies describe the complete with-Hs calculation; initial energies and
+  optimisation paths may differ from 0.2.0 because the MMFF preparation step is removed.
+- Conformer alignment and RMSD deduplication accept noncontiguous RDKit conformer IDs.
+- Array padding promotes mixed dtypes instead of truncating values and rejects mismatched
+  trailing shapes instead of broadcasting. Matching input dtypes remain unchanged.
+- Adjacency construction rejects negative/out-of-range endpoints and mismatched edge arrays.
+
+### On-disk format
+
+- No changes to HDF5 layouts, format versions, storage dtypes, bond encodings or vocabulary indices.
+  Existing datasets remain readable and are not rewritten. Previously overflowed values cannot
+  be recovered by upgrading; regenerate affected data from the original inputs.
 
 ## [0.2.0] - 2026-09-19
 
@@ -118,7 +164,8 @@ First public release.
   load. Those shards now require an explicit `allow_pickle=True`. Columnar shards were never
   affected by the metadata change. Complex interaction payloads remained pickled until 0.2.0.
 
-[Unreleased]: https://github.com/rssrwn/molito/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rssrwn/molito/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/rssrwn/molito/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rssrwn/molito/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/rssrwn/molito/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rssrwn/molito/releases/tag/v0.1.0

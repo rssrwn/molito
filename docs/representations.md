@@ -28,10 +28,16 @@ restored = SmilesMol.load("generated.molito")
 # invalid.to(GraphMol)                    # raises ConversionError
 ```
 
-`validate()` checks RDKit sanitisation, allowing disconnected molecules. Successful
-tokenisation does not imply valid chemistry. SMILES parsing retains explicit hydrogen atoms
+`validate()` checks RDKit sanitisation, allowing disconnected molecules such as salts and mixtures.
+Use `validate(connected=True)` to also require exactly one connected component. This rejects
+empty molecules as well as multiple fragments; a single atom passes. The check uses molecular
+bonds, not the presence of `.` in the text, and never removes fragments or changes the input.
+Failed checks raise `ConversionError` for all three small-molecule representations.
+
+Successful tokenisation does not imply valid chemistry. SMILES parsing retains explicit hydrogen atoms
 and rejects trailing molecule names and CXSMILES annotations; these are not plain SMILES.
 `to_rdkit(sanitise=False)` can produce unsanitised objects and returns `None` on parsing failure.
+Errors reading lazy data, including closed files and corrupt payloads, propagate to the caller.
 `.to(...)` requests sanitisation. The original input is not mutated.
 
 ## Preservation limits
@@ -148,8 +154,8 @@ from molito import MolBatch
 
 batch = MolBatch([SmilesMol("OCC"), SmilesMol("C1[")])
 batch.save("smiles_dataset/", shard_size=1000)
-loaded = MolBatch.load("smiles_dataset/")
-assert loaded[1].text == "C1["
+with MolBatch.load("smiles_dataset/") as loaded:
+    assert loaded[1].text == "C1["
 
 valid = MolBatch([SmilesMol("CCO"), SmilesMol("CCN")])
 graphs = valid.to(GraphMol)                  # GraphBatch, with graph array operations
@@ -160,7 +166,41 @@ Native batches are homogeneous and support indexing, subsets, metadata columns, 
 HDF5 persistence. String shards store exact UTF-8 bytes; RDKit shards store native binary
 payloads. Both reuse molito's JSON/columnar metadata storage. An empty batch needs
 `MolBatch([], mol_type=SmilesMol)`. Conversion failures report the record index and never
-silently drop records. Native batches load eagerly and do not hold files open.
+silently drop records.
+
+Native batch loading leaves molecule payloads on disk in both modes:
+
+| Option | Molecule wrappers | Text / RDKit payloads |
+| --- | --- | --- |
+| `materialise=True` (default) | Created at load time | Read when accessed |
+| `materialise=False` | Created on each lookup | Read when accessed |
+
+Offsets and JSON metadata are read up front. Columnar metadata values remain on disk until
+accessed, and `meta_column()` on a deferred batch reads metadata without creating molecule
+wrappers. RDKit binaries decode as whole molecules; each wrapper caches its decoded RDKit
+object so mutations through `.rdkit_mol` persist on that wrapper. String text is read on access.
+
+With `materialise=False`, repeated `batch[i]` calls return fresh wrappers. Hold a wrapper or
+use `subset()` when making in-memory edits. Loaded metadata is read-only, as with graph batches;
+use `.read()` for an independent mutable copy or assign a new metadata dictionary locally.
+
+Loaded batches own open HDF5 files. Subsets borrow their source files, so closing a subset
+leaves its source open. Call `.read()` to keep data after the owning batch closes:
+
+```python
+with MolBatch.load("smiles_dataset/", materialise=False) as loaded:
+    train = loaded.subset([0, 1]).read()
+
+assert train[1].text == "C1["                # independent of the closed file
+```
+
+`StringMol` and `RDKitMol` also provide `.read()` for a single molecule. Edits affect the
+in-memory object; write a new dataset with `.save()` to persist them. Single-molecule `.load()`
+still reads its native byte file eagerly. Existing 0.2.0 batch files need no migration.
+
+Custom string subclasses are selected using `mol_type=YourStringMol`. Lazy construction uses
+the `_from_lazy(payload, meta)` classmethod without calling `__init__`; subclasses with extra
+state should override that factory and initialise the extra state without reading the payload.
 
 Existing `GraphBatch` storage, lazy loading, vocabulary imports, and graph indices are
 unchanged. Native shards have their own representation/version markers and must be opened

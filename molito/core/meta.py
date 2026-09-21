@@ -246,7 +246,7 @@ def _load_columnar(meta_group: h5py.Group, n_mols: int) -> list:
     columns = {name: ds for name, ds in cols_group.items()}
 
     if not columns:
-        return [{} for _ in range(n_mols)]
+        return [MappingProxyType({}) for _ in range(n_mols)]
 
     # Sanity check that all columns agree on row count
     for name, ds in columns.items():

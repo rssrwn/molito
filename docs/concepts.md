@@ -144,11 +144,17 @@ This applies to `materialise=True` loads and to `subset` results, despite `subse
 described as materialising: it materialises the *objects*, not the arrays behind them. Close the
 batch once you have finished with the data, not once you have finished selecting it.
 
-To keep molecules beyond the file's lifetime, `read()` pulls their arrays into memory:
+Subsets and batches combined with `from_batches` borrow their source data. Closing a borrowed
+batch does not close its source files. Close each owning batch returned by `load` when finished.
+This applies to graph, protein and complex batches.
+
+To keep molecules beyond the file's lifetime, batch `read()` pulls their data into memory.
+The context manager closes the owning batch even if processing raises an exception:
 
 ```python
-train = GraphBatch([mol.read() for mol in batch.subset([0, 1, 2])])
-batch.close_hdf5()
+with GraphBatch.load("dataset/") as batch:
+    train = batch.subset([0, 1, 2]).read()
+
 train.atomics          # fine
 ```
 

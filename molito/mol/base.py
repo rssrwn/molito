@@ -35,7 +35,10 @@ class MolRepr(ABC):
 
     @abstractmethod
     def to_rdkit(self, sanitise: bool = False) -> Chem.rdchem.Mol | None:
-        """Return an independent RDKit molecule, or None when it cannot be built."""
+        """Return an independent RDKit molecule, or None for invalid chemistry.
+
+        Errors reading lazy data propagate to the caller.
+        """
 
     @abstractmethod
     def copy(self) -> Self:
@@ -50,19 +53,26 @@ class MolRepr(ABC):
     def from_bytes(cls, data: bytes) -> Self:
         """Restore the native representation and metadata."""
 
-    def validate(self) -> None:
-        """Raise ConversionError if this representation cannot be sanitised by RDKit.
+    def validate(self, connected: bool = False) -> None:
+        """Raise ConversionError if sanitisation or the requested connectivity check fails.
 
-        Disconnected molecules are allowed. This does not impose dataset-specific
-        element, size, charge, or connectivity constraints.
+        Disconnected molecules are allowed by default. Set connected=True to require
+        exactly one connected component; this also rejects empty molecules. Validation
+        does not modify the molecule or impose element, size, or charge constraints.
         """
 
         try:
             mol = self.to_rdkit(sanitise=True)
         except (ValueError, RuntimeError, KeyError) as exc:
             raise ConversionError(f"Cannot validate {type(self).__name__}: {exc}") from exc
+
         if mol is None:
             raise ConversionError(f"{type(self).__name__} does not represent a sanitisable molecule.")
+
+        if connected:
+            n_components = len(Chem.GetMolFrags(mol))
+            if n_components != 1:
+                raise ConversionError(f"Expected exactly one connected component; found {n_components}.")
 
     def to(self, target: type[TMol], strict: bool = False, **kwargs) -> TMol:
         """Convert through RDKit, preserving metadata in an independent mapping.
@@ -153,10 +163,14 @@ class MolRepr(ABC):
         return text
 
     def save(self, path: str | Path) -> None:
-        """Save native bytes to a new file. Existing files are never overwritten."""
+        """Save native bytes to a new file. Existing files are never overwritten.
 
+        Serialisation finishes before the destination file is created.
+        """
+
+        data = self.to_bytes()
         with Path(path).open("xb") as stream:
-            stream.write(self.to_bytes())
+            stream.write(data)
 
     @classmethod
     def load(cls, path: str | Path) -> Self:

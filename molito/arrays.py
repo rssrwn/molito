@@ -20,9 +20,12 @@ def pad_arrays(arrays: list[TArr]) -> TArr:
     if len(arrays) == 0:
         return np.array([])
 
+    if any(arr.ndim == 0 or arr.shape[1:] != arrays[0].shape[1:] for arr in arrays):
+        raise ValueError("Arrays must have a leading dimension and matching shapes after it.")
+
     max_len = max(arr.shape[0] for arr in arrays)
     batch_shape = (len(arrays), max_len, *arrays[0].shape[1:])
-    padded = np.zeros(batch_shape, dtype=arrays[0].dtype)
+    padded = np.zeros(batch_shape, dtype=np.result_type(*[arr.dtype for arr in arrays]))
 
     for i, arr in enumerate(arrays):
         padded[i, : arr.shape[0]] = arr
@@ -61,6 +64,15 @@ def adj_from_edges(edge_indices: TArr, edge_types: TArr, n_nodes: int, symmetric
     Returns:
         np.ndarray: Adjacency matrix, shape [n_nodes, n_nodes].
     """
+
+    if edge_indices.ndim != 2 or edge_indices.shape[1] != 2:
+        raise ValueError("edge_indices must have shape [n_edges, 2].")
+
+    if edge_types.ndim != 1 or len(edge_types) != len(edge_indices):
+        raise ValueError("edge_types must have one value per edge.")
+
+    if edge_indices.dtype.kind not in "iu" or (edge_indices < 0).any() or (edge_indices >= n_nodes).any():
+        raise ValueError("Edge indices must be integers in [0, n_nodes).")
 
     adj = np.zeros((n_nodes, n_nodes), dtype=edge_types.dtype)
 
