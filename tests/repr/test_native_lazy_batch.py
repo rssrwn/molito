@@ -188,6 +188,17 @@ class TestNativeLazyBatch(unittest.TestCase):
                     detached[0].meta["new"] = "value"
                     self.assertEqual(detached[0].meta["new"], "value")
 
+    def test_connected_validation_of_lazy_payloads(self):
+        for mol_type, batch_type in [(SmilesMol, MolBatch), (RDKitMol, MolBatch), (GraphMol, GraphBatch)]:
+            path = self.path / mol_type.__name__
+            batch_type([SmilesMol(text).to(mol_type) for text in ["CCO", "[Na+].[Cl-]"]]).save(path)
+            for materialise in [True, False]:
+                with batch_type.load(path, materialise=materialise) as loaded:
+                    loaded[0].validate(connected=True)
+                    loaded[1].validate()
+                    with self.assertRaisesRegex(ConversionError, "exactly one connected component"):
+                        loaded[1].validate(connected=True)
+
     def test_indexing_iteration_and_empty_shards(self):
         self.path.mkdir(parents=True)
         MolBatch([], mol_type=SmilesMol).save_hdf5_shard(self.path / "0.hdf5")

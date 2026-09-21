@@ -28,10 +28,16 @@ restored = SmilesMol.load("generated.molito")
 # invalid.to(GraphMol)                    # raises ConversionError
 ```
 
-`validate()` checks RDKit sanitisation, allowing disconnected molecules. Successful
-tokenisation does not imply valid chemistry. SMILES parsing retains explicit hydrogen atoms
+`validate()` checks RDKit sanitisation, allowing disconnected molecules such as salts and mixtures.
+Use `validate(connected=True)` to also require exactly one connected component. This rejects
+empty molecules as well as multiple fragments; a single atom passes. The check uses molecular
+bonds, not the presence of `.` in the text, and never removes fragments or changes the input.
+Failed checks raise `ConversionError` for all three small-molecule representations.
+
+Successful tokenisation does not imply valid chemistry. SMILES parsing retains explicit hydrogen atoms
 and rejects trailing molecule names and CXSMILES annotations; these are not plain SMILES.
 `to_rdkit(sanitise=False)` can produce unsanitised objects and returns `None` on parsing failure.
+Errors reading lazy data, including closed files and corrupt payloads, propagate to the caller.
 `.to(...)` requests sanitisation. The original input is not mutated.
 
 ## Preservation limits

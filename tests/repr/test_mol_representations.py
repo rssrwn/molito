@@ -29,6 +29,38 @@ def _rich_mol():
 
 
 class TestMoleculeRepresentations(unittest.TestCase):
+    def test_validation_can_require_one_connected_component(self):
+        for text in ["CCO", "C", "C1.C1", "[Na+].[Cl-]", ""]:
+            for mol_type in [SmilesMol, RDKitMol, GraphMol]:
+                with self.subTest(text=text, mol_type=mol_type):
+                    mol = SmilesMol(text).to(mol_type)
+                    self.assertIsNone(mol.validate())
+                    self.assertIsNone(mol.validate(connected=False))
+                    if text in ["[Na+].[Cl-]", ""]:
+                        with self.assertRaisesRegex(ConversionError, "exactly one connected component"):
+                            mol.validate(connected=True)
+
+                    else:
+                        self.assertIsNone(mol.validate(connected=True))
+
+    def test_connectedness_does_not_replace_chemical_validation(self):
+        text = "C(C)(C)(C)(C)C"
+        raw = Chem.MolFromSmiles(text, sanitize=False)
+        for mol in [SmilesMol(text), RDKitMol(raw), GraphMol.from_rdkit(raw), SmilesMol("C[")]:
+            for connected in [False, True]:
+                with self.subTest(mol_type=type(mol), connected=connected), rdBase.BlockLogs():
+                    with self.assertRaises(ConversionError):
+                        mol.validate(connected=connected)
+
+    def test_validation_preserves_molecular_state(self):
+        for mol_type in [SmilesMol, RDKitMol, GraphMol]:
+            mol = mol_type.from_rdkit(_rich_mol())
+            mol.meta = {"nested": [1, 2]}
+            original = mol.copy()
+            mol.validate(connected=True)
+            MolRepr._check_conversion(original.to_rdkit(), mol.to_rdkit())
+            self.assertEqual(mol.meta, original.meta)
+
     def test_common_interface_and_string_abstraction(self):
         self.assertTrue(inspect.isabstract(MolRepr))
         self.assertTrue(inspect.isabstract(StringMol))
